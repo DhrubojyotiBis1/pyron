@@ -3,7 +3,9 @@
     "allow": [
       "Bash(git config *)",
       "Bash(git push *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(pkill -f \"pytest tests/test_s4_worker.py\")",
+      "Bash(pkill -f \"pytest tests/test_s4\")"
     ]
   }
 }
