@@ -14,7 +14,7 @@ authors = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9.0"]
+dev = ["pytest>=9.0", "pytest-timeout>=2.3"]
 
 [tool.setuptools]
 packages = ["pyron"]

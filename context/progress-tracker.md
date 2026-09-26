@@ -29,7 +29,7 @@ it changeable), `Scheduler` as the swappable seam, crash-loudly on
 are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 (`DECIDED`). Nothing is `CONFIRMED` — no code exists.
 
-## Implementation progress: S3/7 (≈57%)
+## Implementation progress: S4/7 (≈71%)
 
 - **S0 COMPLETE**: Environment and scaffolding ✓
   - Free-threaded Python build (3.14.7) verified; GIL disabled ✓
@@ -52,7 +52,12 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
   - 21 contract tests: FIFO ordering, close/submit atomicity, drain atomicity, blocking behavior ✓
   - Multiple workers verified: no task lost, each task retrieved by exactly one worker ✓
   - All 96 tests (S0+S1+S2+S3) passing ✓
-- No worker implementation exists.
+- **S4 COMPLETE**: Worker ✓
+  - Worker: owns one non-daemon thread; loop = `next_task()` → `task.run()`; exits on "no task" ✓
+  - `BaseException` from a task is recorded (`crash()`, read after `join`) and re-raised (loud crash) ✓
+  - Ordinary `Exception` marks the task FAILED and the worker continues ✓
+  - 20 tests: lifecycle, join timeout, crash recording (custom BaseException, KeyboardInterrupt, SystemExit), multi-worker (3 workers, 20 tasks), drain vs running worker ✓
+  - All 116 tests (S0-S4) passing ✓
 - No runtime implementation exists.
 - No work-stealing implementation exists.
 - No benchmark suite exists.
@@ -66,11 +71,12 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 | **S0 — Environment and scaffolding** | `pyron/`, `tests/conftest.py`, `pytest.ini`, `tests/test_s0_environment.py` with 5 passing tests; free-threaded build confirmed, GIL disabled |
 | **S1 — Errors, TaskState, Task** | `pyron/errors.py`, `pyron/task.py`, `tests/test_s1_task.py` with 32 passing tests; state machine verified, cancel-vs-claim race tested, timeout behavior validated |
 | **S2 — TaskHandle** | `pyron/handle.py`, `tests/test_s2_handle.py` with 38 passing tests; public API verified, timeout behavior, exception propagation, concurrent access tested |
+| **S4 — Worker** | `pyron/worker.py`, `tests/test_s4_worker.py` with 20 passing tests; clean exit on close, crash recording, exception vs BaseException handling, multi-worker on one scheduler |
 | **S3 — Scheduler protocol + GlobalQueueScheduler** | `pyron/scheduler.py`, `tests/test_s3_scheduler.py` with 21 passing tests; FIFO ordering verified, close/submit atomicity, drain atomicity, multi-worker access tested |
 
 ## In progress
 
-- **S4 — Worker** (queued to start next)
+- **S5 — Runtime** (queued to start next)
 
 ## Planned (not started)
 
@@ -80,8 +86,8 @@ Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 2. ~~S1~~ ✓ DONE
 3. ~~S2~~ ✓ DONE
 4. ~~S3~~ ✓ DONE
-5. **S4 — `Worker`** (next)
-6. S5 — `Runtime`.
+5. ~~S4~~ ✓ DONE
+6. **S5 — `Runtime`** (next)
 7. S6 — stress/race hardening; promote ADRs; update this tracker.
 
 Deferred until after Phase 1 (not queued, not scheduled): benchmarking
@@ -119,7 +125,9 @@ Follow-up:
 
 ## Findings
 
-*(none yet — populated as experiments produce results, including negative
+- 2026-09-26 (S4): a test that leaves a `Worker` blocked in `next_task()` (scheduler never closed) hangs the whole pytest process at exit, because worker threads are non-daemon. This is expected Worker behavior, not a bug: workers stop only on scheduler close (`phase-1/implementation.md` §3.5). Consequence for tests and later for `Runtime`: every started worker must be released by `close()` and joined, including on failure paths. Mitigation added: tests clean up in `finally`; `pytest-timeout` (30 s, thread method) is a dev dependency so a hang fails instead of blocking.
+
+*(further findings — populated as experiments produce results, including negative
 or inconclusive ones)*
 
 ## Validation status
@@ -150,3 +158,4 @@ questions in one place.
 | 2026-09-26 | **S1 Complete**: Errors, TaskState, Task. Implemented `pyron/errors.py` (4 error types), `pyron/task.py` (state machine with 5 states, outcome slots, completion event, guarded by per-task lock). Created `tests/test_s1_task.py` with 32 unit tests covering transitions, cancel-vs-claim race (100 iterations), timeouts, exceptions (Exception vs BaseException). All 37 tests passing (S0 + S1). Git repo initialized with remote; initial commit pushed. | Claude Haiku 4.5 |
 | 2026-09-26 | **S2 Complete**: TaskHandle. Implemented `pyron/handle.py` (public wrapper: state(), done(), result(timeout), exception(timeout), cancel()). Created `tests/test_s2_handle.py` with 38 tests covering state views, timeouts, exception propagation, cancellation, concurrent access (5 threads waiting on same handle). All 75 tests passing (S0 + S1 + S2). TaskHandle verified thread-safe for concurrent operations. | Claude Haiku 4.5 |
 | 2026-09-26 | **S3 Complete**: Scheduler protocol + GlobalQueueScheduler. Implemented `pyron/scheduler.py` with Scheduler protocol (submit, next_task, close, drain) and GlobalQueueScheduler (FIFO queue, single lock+condition, O(1) ops). Created `tests/test_s3_scheduler.py` with 21 tests: FIFO ordering, close/submit atomicity, drain atomicity, blocking behavior, multi-worker access (4 workers, 20 tasks, no loss, no duplication). All 96 tests passing (S0+S1+S2+S3). Scheduler seam verified as swappable for future work-stealing. | Claude Haiku 4.5 |
+| 2026-09-26 | **S4 Complete**: Worker. Implemented `pyron/worker.py` (one non-daemon thread; fetch/run loop; records and re-raises `BaseException`; `crash()` read after `join`). `tests/test_s4_worker.py` with 20 tests. Diagnosed a pytest hang as a leaked blocked worker in two tests (scheduler never closed); fixed with `finally` cleanup and added `pytest-timeout` (30 s, thread method) to dev deps and `pytest.ini`. 116 tests passing (S0-S4). | Claude Sonnet 5 |
