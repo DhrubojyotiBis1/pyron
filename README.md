@@ -6,8 +6,9 @@ real OS threads.
 
 > **Status: experimental, Phase 1.** A minimal scheduler (one global queue,
 > N workers) is implemented and tested. It is a research project, **not
-> production-ready**, and makes **no performance claims** — no benchmark
-> harness exists yet.
+> production-ready**, and makes **no performance claims** here. A standalone
+> CPU-utilisation benchmark script exists (see [Benchmarking](#benchmarking));
+> there is no general benchmark suite yet.
 
 ## Why
 
@@ -234,6 +235,26 @@ Layout:
 | `pyron/worker.py` | `Worker`, one OS thread running tasks |
 | `pyron/runtime.py` | `Runtime`, lifecycle, spawn, shutdown |
 | `pyron/errors.py` | Error types |
+| `benchmarks/cpu_saturation.py` | Standalone CPU-utilisation / scaling benchmark (not part of the tests) |
+
+### Benchmarking
+
+`benchmarks/cpu_saturation.py` measures how much CPU a `Runtime` keeps busy on
+a CPU-bound workload, and compares it with plain threads (and optionally
+processes) doing the same work. It is not run by `pytest`. Use the
+free-threaded interpreter (it refuses to run with the GIL enabled) on an
+otherwise idle machine:
+
+```bash
+.venv/bin/python benchmarks/cpu_saturation.py --quick          # ~5 s smoke test
+.venv/bin/python benchmarks/cpu_saturation.py                  # full sweep, ~3 min
+.venv/bin/python benchmarks/cpu_saturation.py --with-processes --json out.json
+```
+
+Each run prints its environment (CPython build, GIL state, OS, CPU, core
+layout, date, git commit). Read the module docstring for what each column
+means and for the caveats before quoting a number; recorded runs live in
+[`progress-tracker.md`](context/progress-tracker.md) under Experiments.
 
 Design and project state live in [`context/`](context/):
 [`progress-tracker.md`](context/progress-tracker.md) is the source of truth for
@@ -244,8 +265,8 @@ open questions.
 ## What is deliberately not here
 
 Pyron does not modify CPython, replace `asyncio`, or schedule across processes
-or machines. Work-stealing, suspension, backpressure and a benchmark harness are
-deferred beyond Phase 1.
+or machines. Work-stealing, suspension, backpressure and a general benchmark
+suite are deferred beyond Phase 1.
 
 ## License
 

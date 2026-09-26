@@ -121,8 +121,9 @@ evidence and an ADR is promoted to `CONFIRMED` (see §9).
   becomes possible later. Still open.*
 - **Task granularity**: what's the practical minimum task size where
   scheduling overhead doesn't dominate the work? (Needs benchmarking, not
-  guessing.) *Still open; needs a benchmark harness, deferred past
-  Phase 1.*
+  guessing.) *Still open; needs a general benchmark harness, deferred past
+  Phase 1. `benchmarks/cpu_saturation.py` exists and its one recorded run
+  is Experiment 1 in `progress-tracker.md`; it does not settle this question.*
 - **Task representation**: plain object with a callable, vs. something
   coroutine/generator-based for suspension points, vs. no suspension
   support at all initially? *Phase 1 decides (ADR-001, `DECIDED`) on a
