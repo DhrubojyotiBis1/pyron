@@ -29,16 +29,22 @@ it changeable), `Scheduler` as the swappable seam, crash-loudly on
 are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 (`DECIDED`). Nothing is `CONFIRMED` — no code exists.
 
-## Implementation progress: S0/7 (≈14%)
+## Implementation progress: S1/7 (≈29%)
 
 - **S0 COMPLETE**: Environment and scaffolding ✓
   - Free-threaded Python build (3.14.7) verified; GIL disabled ✓
   - Package layout created: `pyron/`, `tests/` ✓
   - pytest installed and configured ✓
   - 5 environment verification tests passing ✓
+- **S1 COMPLETE**: Errors, TaskState, Task ✓
+  - Error types: TaskCancelledError, RuntimeClosedError, RuntimeNotStartedError, SchedulerClosedError ✓
+  - TaskState enum with 5 states and is_terminal() method ✓
+  - Task: guarded state machine with lock, outcome slots, completion event ✓
+  - 32 unit tests: transitions, races, timeouts, exceptions, cancellation ✓
+  - All 37 tests (S0 + S1) passing ✓
 - No scheduler implementation exists.
 - No worker/thread pool implementation exists.
-- No task/future abstraction implementation exists.
+- No task handle abstraction implementation exists.
 - No work-stealing implementation exists.
 - No benchmark suite exists.
 
@@ -49,18 +55,19 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 | Project context system created (`context/`, `AGENTS.md`, `CLAUDE.md`) | This file set |
 | Phase 1 plan documents written (plan, scope, implementation, verification) | `phase-1/*.md` — documentation only; design-time checks in `phase-1/verification.md` §1–§4, no code-level validation |
 | **S0 — Environment and scaffolding** | `pyron/`, `tests/conftest.py`, `pytest.ini`, `tests/test_s0_environment.py` with 5 passing tests; free-threaded build confirmed, GIL disabled |
+| **S1 — Errors, TaskState, Task** | `pyron/errors.py`, `pyron/task.py`, `tests/test_s1_task.py` with 32 passing tests; state machine verified, cancel-vs-claim race tested, timeout behavior validated |
 
 ## In progress
 
-- **S1 — Errors, TaskState, Task** (queued to start next)
+- **S2 — TaskHandle** (queued to start next)
 
 ## Planned (not started)
 
 Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 
 1. ~~S0~~ ✓ DONE
-2. **S1 — errors, `TaskState`, `Task`** (next)
-3. S2 — `TaskHandle`.
+2. ~~S1~~ ✓ DONE
+3. **S2 — `TaskHandle`** (next)
 4. S3 — `Scheduler` protocol + `GlobalQueueScheduler`.
 5. S4 — `Worker`.
 6. S5 — `Runtime`.
@@ -129,3 +136,4 @@ questions in one place.
 | 2026-09-26 | Wrote Phase 1 plan (`context/phase-1/`); moved current phase to Phase 1 (planned); added ADR-001..003 as `PROPOSED`; annotated open questions in `architecture-context.md`. Documentation only, no code. | Claude Code |
 | 2026-09-26 | Recorded owner sign-off on the five Phase 1 decisions: ADR-001 and ADR-002 → `DECIDED`; ADR-003 worker-count clause → `DECIDED` (required explicit `n_workers`), rest still `PROPOSED`. Added cancellation-changeability seams (`phase-1/implementation.md` §3.7) and matching verification items. Documentation only, no code. | Claude Code |
 | 2026-09-26 | **S0 Complete**: Environment and scaffolding. Created `pyron/` package, `pytest.ini`, `.venv` with pytest, `tests/conftest.py` with GIL assertion, and `tests/test_s0_environment.py` with 5 passing tests. Free-threaded Python 3.14.7 verified with GIL disabled. Ready to begin S1. | Claude Haiku 4.5 |
+| 2026-09-26 | **S1 Complete**: Errors, TaskState, Task. Implemented `pyron/errors.py` (4 error types), `pyron/task.py` (state machine with 5 states, outcome slots, completion event, guarded by per-task lock). Created `tests/test_s1_task.py` with 32 unit tests covering transitions, cancel-vs-claim race (100 iterations), timeouts, exceptions (Exception vs BaseException). All 37 tests passing (S0 + S1). Git repo initialized with remote; initial commit pushed. | Claude Haiku 4.5 |

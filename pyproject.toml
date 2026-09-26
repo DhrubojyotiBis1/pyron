@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyron"
+version = "0.0.1.dev0"
+description = "M:N concurrency runtime for free-threaded Python (Phase 1 — global queue scheduler)"
+readme = "README.md"
+requires-python = ">=3.13"
+license = {text = "MIT"}
+authors = [
+    {name = "Dhrubojyoti Bis", email = "tournaverze@gmail.com"}
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0"]
+
+[tool.setuptools]
+packages = ["pyron"]
