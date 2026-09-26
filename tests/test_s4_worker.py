@@ -158,6 +158,7 @@ class TestWorkerTaskExecution:
         # Worker should continue (Exception is not BaseException)
         assert worker.crash() is None
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # loud crash is the behavior under test
     def test_worker_task_with_base_exception(self):
         """Worker task raises BaseException: worker crashes and records it."""
 
@@ -234,6 +235,7 @@ class TestWorkerTaskExecution:
 class TestWorkerCrashHandling:
     """Worker crash recording and propagation."""
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # loud crash is the behavior under test
     def test_worker_records_keyboard_interrupt(self):
         """Worker records KeyboardInterrupt as crash."""
 
@@ -254,6 +256,7 @@ class TestWorkerCrashHandling:
         assert crash is not None
         assert isinstance(crash, KeyboardInterrupt)
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # loud crash is the behavior under test
     def test_worker_records_system_exit(self):
         """Worker records SystemExit as crash."""
 
@@ -273,6 +276,7 @@ class TestWorkerCrashHandling:
         assert crash is not None
         assert isinstance(crash, SystemExit)
 
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")  # loud crash is the behavior under test
     def test_multiple_tasks_before_crash(self):
         """Multiple tasks run before one crashes the worker."""
 
