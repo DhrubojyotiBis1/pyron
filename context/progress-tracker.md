@@ -3,7 +3,7 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-09-26 (S6 complete)
+> Last updated: 2026-09-26 (S6 complete; post-Phase-1 CPU-saturation benchmark script added)
 
 ## Current phase
 
@@ -73,7 +73,9 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
   - ADR-001..003 promoted to `CONFIRMED`; `phase-1/verification.md` §6 checklist completed; status headers swept across `context/` ✓
   - All 160 tests (S0–S6) passing ✓
 - No work-stealing implementation exists.
-- No benchmark suite exists.
+- No general benchmark suite exists. One standalone script does: `benchmarks/cpu_saturation.py`
+  (CPU-utilisation / scaling sweep; not run by pytest). Its one recorded run is Experiment 1 below.
+  It is a measurement tool outside the runtime, not a Phase 1 deliverable; no `pyron/` code changed.
 
 ## Completed
 
@@ -104,10 +106,10 @@ Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 6. ~~S5~~ ✓ DONE
 7. ~~S6~~ ✓ DONE
 
-Deferred until after Phase 1 (not queued, not scheduled): benchmarking
-harness (required before any performance claim — see
-`coding-standards.md` §10), work-stealing scheduler, suspension/waiting
-state, backpressure.
+Deferred until after Phase 1 (not queued, not scheduled): a general
+benchmarking harness beyond `benchmarks/cpu_saturation.py` (required before
+any further performance claim — see `coding-standards.md` §10),
+work-stealing scheduler, suspension/waiting state, backpressure.
 
 Note: this list is intentionally short. Long speculative roadmaps belong
 in `project-overview.md` §4 (vision) at most, not here — this section
@@ -117,12 +119,72 @@ should only ever list what's actually queued to start next.
 
 - Nothing blocks Phase 1. Open architectural questions (queue topology,
   task granularity, backpressure, blocking tasks) remain open in
-  `architecture-context.md` §5 and need a benchmark harness, which is
-  deferred past Phase 1.
+  `architecture-context.md` §5 and need a general benchmark harness, which is
+  deferred past Phase 1 (only `benchmarks/cpu_saturation.py` exists).
 
 ## Experiments performed
 
-*(none yet)*
+### Experiment 1 — CPU saturation: Pyron vs raw threads vs processes — 2026-09-26
+Question: How much of the machine's CPU can a `Runtime` keep busy on a
+CPU-bound pure-Python workload, and how much of what the machine/interpreter
+allows does it deliver, as worker count and task size vary?
+
+Method: `benchmarks/cpu_saturation.py` (run as
+`.venv/bin/python benchmarks/cpu_saturation.py --json …`; the `procs` control
+row needs `--with-processes`). Fixed CPU work (~3 s serial) is cut into tasks
+of 10 / 1 / 0.1 ms and run serially, on T raw `threading.Thread`s pulling from
+a lock-guarded counter (`raw`, the cheapest dynamic dispatch), and on
+`Runtime(n_workers=T)` with one producer (`pyron`); T = 1, 2, 4, 8, 16. Metrics:
+process CPU time (user+sys, all threads) / wall / logical CPUs ("util"), and
+speedup vs serial. Median of 3 repetitions; every task result is verified and
+distinct worker threads are counted. Control (1 ms tasks, T = 4 and 8, 3 reps):
+the same work over separate processes (`procs`).
+Environment: Apple M2 (4 performance + 4 efficiency cores, 8 logical CPUs),
+macOS 26.2 arm64, AC power, CPython 3.14.7 free-threaded (GIL disabled), Pyron
+0.0.1-phase1 at base commit 35c3437 with the script as an uncommitted
+working-tree file at run time. One machine, one session, runs of seconds.
+
+Result (8 workers unless noted; all `pyron` unless noted):
+
+| Task size | cores busy | util | speedup | `raw` speedup | pyron ÷ raw throughput |
+|---|---|---|---|---|---|
+| 10 ms | 6.80 | 85% | 3.58× | 3.69× | 97% |
+| 1 ms | 7.43 | 93% | 3.55× | 3.61× | 98% |
+| 0.1 ms | 7.54 | 94% | 3.87× | 4.17× | 93% |
+
+- Peak CPU utilisation seen: 95.2% (7.62 of 8 logical CPUs) at 16 workers,
+  1 ms tasks. 1 / 2 / 4 workers used ≈1.0 / 2.0 / 4.0 cores (up to 1.13 / 2.19 / 4.32 at
+  0.1 ms, where the producer thread's CPU shows), i.e. util scales with T.
+- Pyron's throughput vs `raw` at the same T ranged 89–101% over all rows;
+  at 0.1 ms it was 89–93% and its kernel-time share was 1.7–5.6% vs 0.5–1.2%
+  for `raw`. At 1 worker / 0.1 ms the gap (9 083 vs 9 933 tasks/s) is
+  ≈ 9 µs of extra cost per task (derived from those two rows).
+- Speedup reached only 3.4–4.2× at 8+ threads even though ~7.5 cores were busy,
+  and `raw` threads showed the same. Control (1 ms): 8 processes reached 4.53×
+  (7.32 cores busy) vs 3.67× for 8 raw threads and 3.56× for 8 Pyron workers.
+- Run-to-run spread of wall time ((max−min)/median over 3 runs) at 8+ threads
+  ranged 1.6–19%; large enough that differences of a few percent are noise.
+- A GIL-enabled interpreter run (`--allow-gil`, smoke length) gave 1.01 cores
+  busy and 0.99× speedup at 8 threads, i.e. the script does distinguish real
+  parallelism from none.
+
+Conclusion: On this machine `Runtime` can drive the process to roughly 85–95%
+of all logical CPUs' time, and tracks a minimal raw-thread dispatcher within
+~4% for tasks ≥ 1 ms and ~7–11% at 0.1 ms. The dominant limit on *useful*
+speedup is not Pyron: a mixed 4P+4E machine caps below 8×, and threads in one
+free-threaded interpreter reach roughly 80% of what separate processes do here
+(3.67× vs 4.53×) with or without Pyron. Why threads trail processes was not
+investigated. The 0.1 ms overhead and its higher kernel-time share are
+*consistent with* single-lock queue/condition-variable cost, but that is a
+hypothesis: no experiment isolated it. The 85% at 10 ms is unexplained (only
+300 tasks per run; tail imbalance is one candidate, untested). Not
+established: behaviour on other hardware/OSes/Python builds, runs longer than
+seconds or under thermal throttling, multiple producers beyond a smoke test
+(`--producers`), or any comparison with `ThreadPoolExecutor`.
+
+Follow-up: none queued. If pursued: repeat on a homogeneous-core machine;
+vary producers at 0.1 ms and below; a longer sustained run
+(`--work-seconds 60`); profile where the ~9 µs/task goes.
 
 When an experiment is run, record it here using this format, regardless of
 outcome:
@@ -196,3 +258,4 @@ questions in one place.
 | 2026-09-26 | Pre-S5 cleanup: re-ran full suite (116 passing); silenced the expected thread-exception warning on the four intentional-crash tests; corrected stale tracker text (header, phase status, "no code exists", validation status, blocked list). | Claude Sonnet 5 |
 | 2026-09-26 | **S5 Complete**: Runtime. Implemented `pyron/runtime.py` exactly per ADR-003 as written (lifecycle lock, drain/cancel shutdown, final sweep, crash surfaced once) plus start-failure cleanup and a guard against `shutdown()` from a worker thread. Exported public API from `pyron/__init__.py`. `tests/test_s5_runtime.py` with 32 tests; 148 passing (S0–S5), S5 file stable over 25 repeated runs. ADR-003 remains `PROPOSED` until S6. | Claude Sonnet 5 |
 | 2026-09-26 | **S6 Complete**: stress and race hardening; documentation promotion. Added `tests/test_s6_stress.py` (9 tests) and an exact-N-workers test; fixed two racy test assertions in `tests/test_s4_worker.py`; promoted ADR-001..003 to `CONFIRMED` with evidence; completed `phase-1/verification.md` §6; swept stale status headers in `context/` (project-overview, plan, scope, implementation, architecture-context). 160 tests passing. Phase 1 complete. | Claude Sonnet 5 |
+| 2026-09-26 | Added `benchmarks/cpu_saturation.py` (standalone CPU-utilisation/scaling benchmark; no `pyron/` changes) and recorded Experiment 1. Updated stale "no benchmark" statements here, in `README.md` and in `architecture-context.md` §5. Script not yet committed at time of writing. | Claude Sonnet 5 |
