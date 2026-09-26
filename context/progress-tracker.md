@@ -29,7 +29,7 @@ it changeable), `Scheduler` as the swappable seam, crash-loudly on
 are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 (`DECIDED`). Nothing is `CONFIRMED` — no code exists.
 
-## Implementation progress: S1/7 (≈29%)
+## Implementation progress: S2/7 (≈43%)
 
 - **S0 COMPLETE**: Environment and scaffolding ✓
   - Free-threaded Python build (3.14.7) verified; GIL disabled ✓
@@ -41,10 +41,14 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
   - TaskState enum with 5 states and is_terminal() method ✓
   - Task: guarded state machine with lock, outcome slots, completion event ✓
   - 32 unit tests: transitions, races, timeouts, exceptions, cancellation ✓
-  - All 37 tests (S0 + S1) passing ✓
+- **S2 COMPLETE**: TaskHandle ✓
+  - TaskHandle: public caller-facing wrapper around Task ✓
+  - Methods: state(), done(), result(timeout), exception(timeout), cancel() ✓
+  - 38 unit tests: state views, timeouts, exception propagation, cancellation, concurrency ✓
+  - Thread-safe for concurrent result/exception/cancel calls ✓
+  - All 75 tests (S0 + S1 + S2) passing ✓
 - No scheduler implementation exists.
 - No worker/thread pool implementation exists.
-- No task handle abstraction implementation exists.
 - No work-stealing implementation exists.
 - No benchmark suite exists.
 
@@ -56,10 +60,11 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 | Phase 1 plan documents written (plan, scope, implementation, verification) | `phase-1/*.md` — documentation only; design-time checks in `phase-1/verification.md` §1–§4, no code-level validation |
 | **S0 — Environment and scaffolding** | `pyron/`, `tests/conftest.py`, `pytest.ini`, `tests/test_s0_environment.py` with 5 passing tests; free-threaded build confirmed, GIL disabled |
 | **S1 — Errors, TaskState, Task** | `pyron/errors.py`, `pyron/task.py`, `tests/test_s1_task.py` with 32 passing tests; state machine verified, cancel-vs-claim race tested, timeout behavior validated |
+| **S2 — TaskHandle** | `pyron/handle.py`, `tests/test_s2_handle.py` with 38 passing tests; public API verified, timeout behavior, exception propagation, concurrent access tested |
 
 ## In progress
 
-- **S2 — TaskHandle** (queued to start next)
+- **S3 — Scheduler protocol + GlobalQueueScheduler** (queued to start next)
 
 ## Planned (not started)
 
@@ -67,8 +72,8 @@ Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 
 1. ~~S0~~ ✓ DONE
 2. ~~S1~~ ✓ DONE
-3. **S2 — `TaskHandle`** (next)
-4. S3 — `Scheduler` protocol + `GlobalQueueScheduler`.
+3. ~~S2~~ ✓ DONE
+4. **S3 — `Scheduler` protocol + `GlobalQueueScheduler`** (next)
 5. S4 — `Worker`.
 6. S5 — `Runtime`.
 7. S6 — stress/race hardening; promote ADRs; update this tracker.
@@ -137,3 +142,4 @@ questions in one place.
 | 2026-09-26 | Recorded owner sign-off on the five Phase 1 decisions: ADR-001 and ADR-002 → `DECIDED`; ADR-003 worker-count clause → `DECIDED` (required explicit `n_workers`), rest still `PROPOSED`. Added cancellation-changeability seams (`phase-1/implementation.md` §3.7) and matching verification items. Documentation only, no code. | Claude Code |
 | 2026-09-26 | **S0 Complete**: Environment and scaffolding. Created `pyron/` package, `pytest.ini`, `.venv` with pytest, `tests/conftest.py` with GIL assertion, and `tests/test_s0_environment.py` with 5 passing tests. Free-threaded Python 3.14.7 verified with GIL disabled. Ready to begin S1. | Claude Haiku 4.5 |
 | 2026-09-26 | **S1 Complete**: Errors, TaskState, Task. Implemented `pyron/errors.py` (4 error types), `pyron/task.py` (state machine with 5 states, outcome slots, completion event, guarded by per-task lock). Created `tests/test_s1_task.py` with 32 unit tests covering transitions, cancel-vs-claim race (100 iterations), timeouts, exceptions (Exception vs BaseException). All 37 tests passing (S0 + S1). Git repo initialized with remote; initial commit pushed. | Claude Haiku 4.5 |
+| 2026-09-26 | **S2 Complete**: TaskHandle. Implemented `pyron/handle.py` (public wrapper: state(), done(), result(timeout), exception(timeout), cancel()). Created `tests/test_s2_handle.py` with 38 tests covering state views, timeouts, exception propagation, cancellation, concurrent access (5 threads waiting on same handle). All 75 tests passing (S0 + S1 + S2). TaskHandle verified thread-safe for concurrent operations. | Claude Haiku 4.5 |
