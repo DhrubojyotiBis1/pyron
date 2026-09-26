@@ -1,6 +1,6 @@
 # Phase 1 — Scope
 
-> Status: PLANNED. Last updated: 2026-09-26.
+> Status: IMPLEMENTED (limitations below verified or recorded at S6). Last updated: 2026-09-26.
 > Scope changes for this phase must be flagged and recorded here, not
 > absorbed silently (`ai-workflow-rules.md` §2).
 

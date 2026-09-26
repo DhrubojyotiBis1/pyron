@@ -18,10 +18,11 @@ tags. Untagged statements should be treated as errors in this document.
 | `OPEN QUESTION` | Genuinely unresolved |
 | `REJECTED` | Considered and explicitly not pursued, with reason |
 
-As of project initialization, **nothing is `CONFIRMED`** — there is no
-implementation yet. (Still true on 2026-09-26: Phase 1 is planned in
-`phase-1/`; ADR-001 and ADR-002 are `DECIDED` (direction only) and ADR-003
-is `PROPOSED` apart from its worker-count clause.)
+As of project initialization, nothing was `CONFIRMED`. On 2026-09-26, at the
+end of Phase 1 (S6), ADR-001, ADR-002 and ADR-003 were promoted to
+`CONFIRMED` on the evidence listed in each entry. Everything else in this
+document keeps the tag it already had; in particular the open questions in
+§5 remain open.
 
 ## 1. Conceptual runtime model — `DECIDED` (direction only)
 
@@ -63,13 +64,14 @@ experimentation.
   workers.
 - **Task handle / future** — caller-facing object to await/retrieve a
   task's result or exception.
-- **Runtime** — `PROPOSED` (added 2026-09-26): thin facade that owns the
-  scheduler and workers, and provides `spawn` and explicit start/shutdown.
-  Takes a required explicit `n_workers` (`DECIDED`, ADR-003).
+- **Runtime** — `CONFIRMED` for Phase 1 (added 2026-09-26, implemented in
+  S5, ADR-003): thin facade that owns the scheduler and workers, and
+  provides `spawn` and explicit start/shutdown. Takes a required explicit
+  `n_workers`.
 
-Phase 1 refinement — see `phase-1/implementation.md` and ADR-001..003.
-Scheduler-as-seam and the task states are `DECIDED` (signed off
-2026-09-26); the rest is `PROPOSED`:
+Phase 1 refinement — see `phase-1/implementation.md` and ADR-001..003, all
+`CONFIRMED` at S6 (2026-09-26) for the Phase 1 design. The lists above
+remain candidates for later phases:
 
 - The swappable seam is the **Scheduler**, not the run queue. The single
   global FIFO queue is an internal detail of the Phase 1 scheduler
@@ -87,9 +89,9 @@ Scheduler-as-seam and the task states are `DECIDED` (signed off
 3. An idle worker picks up the task and executes it.
 4. Result or exception is stored and made available via the task's handle.
 5. On runtime shutdown, in-flight/pending tasks are drained or cancelled
-   per a documented (not yet decided) policy. *Phase 1 proposal (ADR-003,
-   `PROPOSED`): shutdown supports both modes — drain (default) or cancel
-   pending; tasks already running always run to completion.*
+   per a documented policy. *Phase 1 (ADR-003, `CONFIRMED`): shutdown
+   supports both modes — drain (default) or cancel pending; tasks already
+   running always run to completion.*
 
 This flow is a starting hypothesis for experimentation, not a spec.
 
@@ -194,14 +196,13 @@ Reasoning:
 Supersedes: (if applicable)
 ```
 
-Written at Phase 1 planning time (2026-09-26) before any code exists.
-Status on 2026-09-26: ADR-002 and ADR-001 are `DECIDED` (signed off by the
-project owner); ADR-003 is `PROPOSED`, except its worker-count clause which
-is `DECIDED`. Nothing becomes `CONFIRMED` until the Phase 1 implementation
-is validated (`phase-1/verification.md`). Full design:
-`phase-1/implementation.md`.
+Written at Phase 1 planning time (2026-09-26). Status history on 2026-09-26:
+ADR-001 and ADR-002 `DECIDED` (signed off by the project owner); ADR-003
+`PROPOSED` except its worker-count clause (`DECIDED`). At S6 all three were
+promoted to `CONFIRMED` after implementation and stress validation
+(`phase-1/verification.md`). Full design: `phase-1/implementation.md`.
 
-### ADR-003 — Synchronization strategy, lifecycle and worker count — PROPOSED (worker-count clause DECIDED) — 2026-09-26
+### ADR-003 — Synchronization strategy, lifecycle and worker count — CONFIRMED — 2026-09-26
 Decision:
 - The Phase 1 scheduler is a double-ended queue plus a closed flag under a
   single lock with a wait/notify condition, held O(1) per operation, with
@@ -233,9 +234,11 @@ Reasoning:
 - A required explicit worker count avoids baking a CPU-count policy in
   before the thread-count question has been investigated, and keeps
   behavior reproducible across machines.
+Evidence (added at S6, 2026-09-26): `pyron/runtime.py`, `pyron/worker.py`, `pyron/scheduler.py`; `tests/test_s4_worker.py`, `tests/test_s5_runtime.py`, `tests/test_s6_stress.py`. Exercised: both shutdown modes, idempotence, worker crash surfaced once, final sweep after every worker died, spawn racing shutdown (including tasks spawning children mid-shutdown), concurrent shutdown callers, and 20 create/load/shutdown rounds with no thread leaks. Run on free-threaded CPython 3.14.7 with the GIL disabled.
+Refinements found while implementing (behavior of the code, not changes to the decision): (1) a failed `start()` (thread creation error) closes the scheduler, cancels queued tasks, joins the workers already started, and leaves the runtime `STOPPED`; (2) `shutdown()` from one of the runtime's own worker threads raises `RuntimeError` (a worker cannot join itself); (3) only the call that moves `RUNNING → STOPPING` performs the shutdown, so concurrent or repeated callers return immediately without waiting for it to finish; (4) if several workers crashed, only the first recorded crash is raised.
 Supersedes: none.
 
-### ADR-002 — Scheduler as the swappable seam; Phase 1 global FIFO queue — DECIDED — 2026-09-26
+### ADR-002 — Scheduler as the swappable seam; Phase 1 global FIFO queue — CONFIRMED — 2026-09-26
 Decision:
 - The swappable interface is a `Scheduler` protocol with `submit`,
   `next_task`, `close`, `drain`, and a shared contract (documented in
@@ -253,9 +256,10 @@ Reasoning:
 - Unbounded is a deferral of the backpressure question, not an answer to it.
 - Signed off "as of now" — revisit via a new ADR if evidence (for example
   from work-stealing experiments) shows the seam is in the wrong place.
+Evidence (added at S6, 2026-09-26): `pyron/scheduler.py`; `tests/test_s3_scheduler.py` (contract, FIFO, atomic close/submit and drain, multi-worker no-loss/no-duplicate) and the close-vs-submit race test in `tests/test_s6_stress.py`. `Worker` and `Runtime` depend only on the `Scheduler` protocol, and `Runtime` accepts an injected scheduler (tested). No second `Scheduler` implementation exists yet, so substitutability is untested beyond the single implementation; the shared contract tests are the mechanism for that. Nothing here is a performance claim.
 Supersedes: none.
 
-### ADR-001 — Task representation and state model — DECIDED — 2026-09-26
+### ADR-001 — Task representation and state model — CONFIRMED — 2026-09-26
 Decision:
 - A task is a plain object wrapping a callable and its arguments; no
   suspension support in Phase 1. Callers receive a separate `TaskHandle`,
@@ -291,6 +295,7 @@ Reasoning:
   which changes the Worker/Scheduler contract, so it warrants its own ADR.
 - Signed off "for now" (five states) on 2026-09-26; revisit through a new
   ADR entry rather than editing this one.
+Evidence (added at S6, 2026-09-26): `pyron/task.py`, `pyron/handle.py`; `tests/test_s1_task.py`, `tests/test_s2_handle.py`, and the claim-vs-cancel and fetch-vs-shutdown-cancel stress tests in `tests/test_s6_stress.py`. Every accepted task ended in exactly one terminal state, and "callable ran" held exactly when the state was `COMPLETED`. Cancellation seam check: outside `pyron/task.py`, no code compares against or branches on a `TaskState` value (grep of `runtime`, `worker`, `scheduler`, `handle`); the pending-only rule lives only in the transition table and `Task.cancel`. Confirmed for a plain callable object with five states and no suspension; suspension remains open.
 Supersedes: none.
 
 ## 9. How to use this document as an agent

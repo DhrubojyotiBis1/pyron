@@ -1,9 +1,9 @@
 # Phase 1 — Implementation Design
 
-> Status: design only, no code exists. Last updated: 2026-09-26.
-> ADR-001 and ADR-002 are `DECIDED` (signed off 2026-09-26). ADR-003 is
-> `PROPOSED` except its worker-count clause (`DECIDED`).
-> This is a low-level design. Nothing here is evidence of implementation.
+> Status: implemented (S0–S6); the code in `pyron/` follows this design.
+> Last updated: 2026-09-26. ADR-001..003 are `CONFIRMED` (S6).
+> This is a low-level design. Evidence of implementation is in the code,
+> tests and `../progress-tracker.md`, not in this document.
 > Rationale for the decisions lives in the ADRs (`../architecture-context.md`
 > §8): ADR-001 (task model), ADR-002 (scheduler seam), ADR-003
 > (synchronization and lifecycle).

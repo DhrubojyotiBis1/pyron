@@ -1,10 +1,9 @@
 # Phase 1 — Plan: Minimal M:N Scheduler (1 global queue, N workers)
 
-> **Status: PLANNED — not started. No code exists.**
+> **Status: IMPLEMENTED (S0–S6) — see `../progress-tracker.md` for evidence.**
 > Last updated: 2026-09-26
-> The five sign-off decisions in §6 were answered on 2026-09-26 and the
-> related ADRs are `DECIDED` (direction only). Nothing is `CONFIRMED` until
-> the implementation is validated (`../architecture-context.md` §8).
+> The five sign-off decisions in §6 were answered on 2026-09-26. ADR-001..003
+> were promoted to `CONFIRMED` at S6 (`../architecture-context.md` §8).
 
 Companion documents in this folder:
 
@@ -93,10 +92,10 @@ Phase 1 is complete only when all of the following hold (mirrors
 "For now" and "as of now" mean these may be revisited through a new ADR
 entry when evidence warrants; they are not permanent commitments.
 
-Still `PROPOSED` (not part of the sign-off above): the synchronization and
-shutdown details in ADR-003 — the lock structure, the two shutdown modes
-and the final sweep. They are implementation-level and will be validated by
-tests before promotion.
+Originally `PROPOSED` (not part of the sign-off above): the synchronization
+and shutdown details in ADR-003 — the lock structure, the two shutdown modes
+and the final sweep. They were implemented as written (S5), validated by
+tests and stress runs (S6), and promoted to `CONFIRMED` with ADR-003.
 
 ## 7. What comes after Phase 1 (not committed)
 

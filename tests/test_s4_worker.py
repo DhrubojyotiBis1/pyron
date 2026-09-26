@@ -28,30 +28,32 @@ class TestWorkerBasic:
 
     def test_worker_start_creates_thread(self):
         """start() creates and starts a thread."""
-        scheduler = GlobalQueueScheduler()
-        scheduler.close()  # So worker will exit immediately
+        scheduler = GlobalQueueScheduler()  # open: worker blocks in next_task
 
         worker = Worker(scheduler)
-        worker.start()
-        assert worker._thread is not None
-        assert worker._thread.is_alive()
-
-        worker.join(timeout=1.0)
+        try:
+            worker.start()
+            assert worker._thread is not None
+            assert worker._thread.is_alive()
+        finally:
+            scheduler.close()
+            worker.join(timeout=5.0)
         assert not worker._thread.is_alive()
 
     def test_worker_joins_successfully(self):
         """join() waits for thread to exit."""
-        scheduler = GlobalQueueScheduler()
-        scheduler.close()
+        scheduler = GlobalQueueScheduler()  # open: worker blocks in next_task
 
         worker = Worker(scheduler)
         worker.start()
-
-        # Thread should be running
-        assert worker._thread.is_alive()
+        try:
+            # Thread should be running (blocked waiting for work)
+            assert worker._thread.is_alive()
+        finally:
+            scheduler.close()
 
         # Join waits for it to exit
-        worker.join(timeout=1.0)
+        worker.join(timeout=5.0)
         assert not worker._thread.is_alive()
 
     def test_worker_join_timeout(self):

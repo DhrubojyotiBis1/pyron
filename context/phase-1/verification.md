@@ -1,9 +1,9 @@
 # Phase 1 — Verification
 
-> Status: PLANNED. Design-time checks below were performed against the
-> written design on 2026-09-26 and re-checked after the sign-off answers
-> (required `n_workers`, cancellation seams); **code-level checks are all
-> pending** since no code exists. Last updated: 2026-09-26.
+> Status: COMPLETE for Phase 1. Design-time checks (§1–§4) were performed
+> against the written design on 2026-09-26; code-level checks (§5) were
+> executed across S1–S6 and are recorded in §5 and §6. Last updated:
+> 2026-09-26.
 
 Two kinds of verification are separated here so neither is mistaken for the
 other: (A) checks that the *design* is sound (done on paper), and (B) checks
@@ -24,10 +24,11 @@ that the *implementation* is correct (to be done with tests and stress runs).
 | Consistent with the existing example `pending → running → done` in `coding-standards.md` §5 | Pass: "done" is split into three outcomes; no contradiction |
 | No dead or unreachable state | Pass; `WAITING` deliberately omitted because nothing could transition into it (ADR-001) |
 
-Open point: a race exists on paper between `next_task` returning a task and
-`run` claiming it while shutdown-cancel drains. It is benign (a task already
-fetched by a worker is claimed by that worker; drained tasks are not in the
-queue any more), but it **must** be covered by a test (§5, S6).
+Open point (closed at S6): a race exists on paper between `next_task`
+returning a task and `run` claiming it while shutdown-cancel drains. It is
+benign (a task already fetched by a worker is claimed by that worker;
+drained tasks are not in the queue any more). Covered by
+`TestFetchVsShutdownCancel` in `tests/test_s6_stress.py`.
 
 ## 2. Entity relations and extensibility check (design-time)
 
@@ -72,13 +73,13 @@ cross-entity links are composition or protocol dependency.
 | No performance claims | `ai-workflow-rules.md` §8 | Pass; none made |
 | Scope limited to current phase; blocked-task limitation recorded | `ai-workflow-rules.md` §2 | Pass; `scope.md` §3 |
 | No CONFIRMED decision altered | `ai-workflow-rules.md` §6 | Pass; nothing is `CONFIRMED` yet |
-| No `CONFIRMED` claim without code + tests | `AGENTS.md` | Pass; all new ADRs are `PROPOSED` |
+| No `CONFIRMED` claim without code + tests | `AGENTS.md` | Pass at design time (ADRs were `PROPOSED`/`DECIDED`); ADR-001..003 promoted to `CONFIRMED` at S6 only after the §5 tests below passed |
 
 No violation of an architectural rule was found. One justified deviation
 (locks vs. message passing) and one incomplete extensibility point
 (suspension) are recorded rather than hidden.
 
-## 5. Test plan (implementation-time — pending)
+## 5. Test plan (implementation-time — executed S1–S6)
 
 Framework: pytest, minimal dependencies (`coding-standards.md` §9). Hangs
 must fail rather than block: use bounded joins/waits with timeouts.
@@ -101,17 +102,17 @@ must fail rather than block: use bounded joins/waits with timeouts.
 
 Every race or deadlock found and fixed gets a regression test.
 
-## 6. Completion checklist (all currently unchecked)
+## 6. Completion checklist
 
 Mirrors `ai-workflow-rules.md` §10.
 
-- [ ] Change is scoped to Phase 1 (or scope expansion was flagged)
-- [ ] Tests exist and pass for all new behavior
-- [ ] Stress runs pass repeatedly on a free-threaded build with GIL disabled
-- [ ] Concurrency safety was checked, not assumed (§5 evidence recorded)
-- [ ] Ownership/synchronization documented in every component
-- [ ] No performance claim anywhere
-- [ ] `progress-tracker.md` reflects the real state (no aspirational entries)
-- [ ] ADR-001..003 promoted to `CONFIRMED` with evidence, or revised
-- [ ] Known limitations (`scope.md` §3) still accurate, or updated
-- [ ] No document contradicts another
+- [x] Change is scoped to Phase 1 (or scope expansion was flagged) — the only additions beyond the plan (start-failure cleanup, worker-thread `shutdown()` guard) are recorded in ADR-003's evidence
+- [x] Tests exist and pass for all new behavior — 160 tests
+- [x] Stress runs pass repeatedly on a free-threaded build with GIL disabled — see the S6 evidence note in `progress-tracker.md` (Findings) for run counts
+- [x] Concurrency safety was checked, not assumed (§5 evidence recorded) — same note
+- [x] Ownership/synchronization documented in every component — module docstrings of `task`, `handle`, `scheduler`, `worker`, `runtime` (`errors` and `__init__` hold no state)
+- [x] No performance claim anywhere — searched code, tests and context; none found
+- [x] `progress-tracker.md` reflects the real state (no aspirational entries)
+- [x] ADR-001..003 promoted to `CONFIRMED` with evidence
+- [x] Known limitations (`scope.md` §3) still accurate — limitation 2 is now demonstrated by `TestDocumentedLimitation`; the rest unchanged
+- [x] No document contradicts another — status headers swept across `context/` at S6

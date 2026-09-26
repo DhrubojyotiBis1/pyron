@@ -3,11 +3,11 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-09-26 (S5 complete)
+> Last updated: 2026-09-26 (S6 complete)
 
 ## Current phase
 
-**Phase 1 — Minimal M:N scheduler (1 global queue, N workers). Status: IN PROGRESS (S0–S5 complete, S6 next).**
+**Phase 1 — Minimal M:N scheduler (1 global queue, N workers). Status: COMPLETE (S0–S6 done; exit criteria met — see Validation status).**
 
 Phase 0 (initialization: persistent context system) is complete.
 
@@ -26,10 +26,11 @@ The five sign-off decisions were answered on 2026-09-26 (`phase-1/plan.md`
 §6): five task states, pending-only cancellation (with a design that keeps
 it changeable), `Scheduler` as the swappable seam, crash-loudly on
 `BaseException`, and a required explicit `n_workers`. ADR-001 and ADR-002
-are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
-(`DECIDED`). Nothing is `CONFIRMED` yet: components S0–S4 exist with tests, but no ADR has been promoted (planned for S6).
+are `DECIDED`; ADR-003 was `PROPOSED` except its worker-count clause
+(`DECIDED`). At S6 all three ADRs were promoted to `CONFIRMED` with
+evidence recorded in each ADR entry (`architecture-context.md` §8).
 
-## Implementation progress: S5/7 (≈86%)
+## Implementation progress: S6/7 (100% of the Phase 1 plan)
 
 - **S0 COMPLETE**: Environment and scaffolding ✓
   - Free-threaded Python build (3.14.7) verified; GIL disabled ✓
@@ -67,6 +68,10 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
   - Public API exported from `pyron/__init__.py` ✓
   - 32 tests: 1000 tasks on 4 workers each run exactly once on ≤4 threads; both shutdown modes; crash surfaced once; all-workers-dead final sweep; start-failure cleanup; spawn-vs-shutdown stress (both modes) ✓
   - All 148 tests (S0–S5) passing; S5 file run 25× with no failures ✓
+- **S6 COMPLETE**: Stress and race hardening; documentation promotion ✓
+  - `tests/test_s6_stress.py` (9 stress tests): claim vs cancel with 4 cancellers, close vs submit, fetch vs shutdown-cancel, handle-cancel racing shutdown-cancel, tasks spawning children mid-shutdown (both modes), 6 concurrent `shutdown()` callers, 20-round soak (60 000 tasks, no thread leaks), and the documented starvation limitation ✓
+  - ADR-001..003 promoted to `CONFIRMED`; `phase-1/verification.md` §6 checklist completed; status headers swept across `context/` ✓
+  - All 160 tests (S0–S6) passing ✓
 - No work-stealing implementation exists.
 - No benchmark suite exists.
 
@@ -85,7 +90,7 @@ are `DECIDED`; ADR-003 is `PROPOSED` except its worker-count clause
 
 ## In progress
 
-- **S6 — stress/race hardening, ADR promotion** (queued to start next)
+*(nothing — Phase 1 complete; next phase not yet scoped)*
 
 ## Planned (not started)
 
@@ -97,7 +102,7 @@ Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 4. ~~S3~~ ✓ DONE
 5. ~~S4~~ ✓ DONE
 6. ~~S5~~ ✓ DONE
-7. **S6 — stress/race hardening; promote ADRs; update this tracker.** (next)
+7. ~~S6~~ ✓ DONE
 
 Deferred until after Phase 1 (not queued, not scheduled): benchmarking
 harness (required before any performance claim — see
@@ -110,9 +115,10 @@ should only ever list what's actually queued to start next.
 
 ## Blocked / unresolved
 
-- ADR-003's synchronization and shutdown details (lock structure, two
-  shutdown modes, final sweep) are still `PROPOSED`; they must be reviewed
-  before S5 starts, since `Runtime` implements them.
+- Nothing blocks Phase 1. Open architectural questions (queue topology,
+  task granularity, backpressure, blocking tasks) remain open in
+  `architecture-context.md` §5 and need a benchmark harness, which is
+  deferred past Phase 1.
 
 ## Experiments performed
 
@@ -134,16 +140,29 @@ Follow-up:
 
 - 2026-09-26 (S4): a test that leaves a `Worker` blocked in `next_task()` (scheduler never closed) hangs the whole pytest process at exit, because worker threads are non-daemon. This is expected Worker behavior, not a bug: workers stop only on scheduler close (`phase-1/implementation.md` §3.5). Consequence for tests and later for `Runtime`: every started worker must be released by `close()` and joined, including on failure paths. Mitigation added: tests clean up in `finally`; `pytest-timeout` (30 s, thread method) is a dev dependency so a hang fails instead of blocking.
 
+- 2026-09-26 (S6) — **Concurrency-safety evidence.** Races probed and how:
+  - claim vs cancel: 2 000 tasks × 10 rounds, 4 workers, 4 threads cancelling in shuffled order; each task ended exactly one of ran/`COMPLETED` or `CANCELLED`, never both, never neither.
+  - close vs submit (scheduler): 300 rounds, 4 submitters racing `close` behind a barrier; every accepted task was delivered exactly once, none stranded, nothing accepted after close.
+  - fetch vs shutdown-cancel: 1 000 tasks × 50 rounds, plus handle-cancel racing shutdown-cancel (30 rounds); "callable ran" held iff `COMPLETED`.
+  - spawn during shutdown: external spammers (S5) and tasks spawning children (S6), both modes; every accepted handle reached a terminal state; late spawns got `RuntimeClosedError`.
+  - concurrent `shutdown()` callers: 50 rounds × 6 threads mixing modes; no exception, workers joined, final state `STOPPED`.
+  - soak: 20 rounds × 3 000 tasks × 8 workers with 4 submitter threads; no thread leaks.
+  Repeat-run record: the S6 file passed 60 consecutive runs and the full suite 60 consecutive runs (then 50 more after adding the last test), all on free-threaded 3.14.7 with the GIL disabled. Not evidence of absence of races — a bounded sample on one machine.
+- 2026-09-26 (S6) — **Two test-only flakes found and fixed by repeated runs; neither was a runtime bug.** (1) `test_worker_start_creates_thread` and the `join` test in `test_s4_worker.py` closed the scheduler before asserting the worker thread was alive, so the worker could exit first; they now keep the scheduler open until after the assertion. (2) The new starvation test let the first parent spawn its child before the second parent had been claimed, so an idle worker ran the child; parents now meet at a barrier so every worker is occupied first. Lesson recorded: single passing runs are not enough for these tests; the repeated-run loop caught both.
+- 2026-09-26 (S6) — **Deadlock limitation demonstrated.** With 2 workers and 2 parent tasks each waiting on a queued child, no child ran until a parent's 1 s wait timed out (`scope.md` §3.2). Recorded, not fixed.
+
 *(further findings — populated as experiments produce results, including negative
 or inconclusive ones)*
 
 ## Validation status
 
-Full suite: 148 tests passing, no warnings (2026-09-26, free-threaded 3.14.7).
-Per component (S0–S5): tested as listed under Implementation progress.
-Known-untested: long/sustained stress and repeated-run hardening (S6); a
-task calling `spawn` on its own runtime during shutdown; behavior under
-resource exhaustion beyond the simulated thread-start failure.
+Full suite: 160 tests passing, no warnings (2026-09-26, free-threaded CPython
+3.14.7, GIL disabled — asserted by `tests/conftest.py`).
+Per component (S0–S6): tested as listed under Implementation progress.
+Known-untested: runs longer than seconds (no hours-long soak); other
+platforms and Python versions (only macOS / Darwin, 3.14.7t); resource
+exhaustion beyond the simulated thread-start failure; a second `Scheduler`
+implementation (only the global queue exists).
 Known limitations: concurrent `shutdown()` callers other than the one that
 performs the shutdown return immediately without waiting; `shutdown()` from
 a worker thread raises `RuntimeError`; if several workers crashed only the
@@ -176,3 +195,4 @@ questions in one place.
 | 2026-09-26 | **S4 Complete**: Worker. Implemented `pyron/worker.py` (one non-daemon thread; fetch/run loop; records and re-raises `BaseException`; `crash()` read after `join`). `tests/test_s4_worker.py` with 20 tests. Diagnosed a pytest hang as a leaked blocked worker in two tests (scheduler never closed); fixed with `finally` cleanup and added `pytest-timeout` (30 s, thread method) to dev deps and `pytest.ini`. 116 tests passing (S0-S4). | Claude Sonnet 5 |
 | 2026-09-26 | Pre-S5 cleanup: re-ran full suite (116 passing); silenced the expected thread-exception warning on the four intentional-crash tests; corrected stale tracker text (header, phase status, "no code exists", validation status, blocked list). | Claude Sonnet 5 |
 | 2026-09-26 | **S5 Complete**: Runtime. Implemented `pyron/runtime.py` exactly per ADR-003 as written (lifecycle lock, drain/cancel shutdown, final sweep, crash surfaced once) plus start-failure cleanup and a guard against `shutdown()` from a worker thread. Exported public API from `pyron/__init__.py`. `tests/test_s5_runtime.py` with 32 tests; 148 passing (S0–S5), S5 file stable over 25 repeated runs. ADR-003 remains `PROPOSED` until S6. | Claude Sonnet 5 |
+| 2026-09-26 | **S6 Complete**: stress and race hardening; documentation promotion. Added `tests/test_s6_stress.py` (9 tests) and an exact-N-workers test; fixed two racy test assertions in `tests/test_s4_worker.py`; promoted ADR-001..003 to `CONFIRMED` with evidence; completed `phase-1/verification.md` §6; swept stale status headers in `context/` (project-overview, plan, scope, implementation, architecture-context). 160 tests passing. Phase 1 complete. | Claude Sonnet 5 |

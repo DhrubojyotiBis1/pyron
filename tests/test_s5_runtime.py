@@ -50,6 +50,18 @@ class TestConstruction:
         assert rt.state() is RuntimeState.NEW
         assert rt.n_workers == 3
 
+    @pytest.mark.parametrize("n", [1, 3, 8])
+    def test_start_creates_exactly_n_workers(self, n):
+        before = threading.active_count()
+        rt = Runtime(n)
+        rt.start()
+        try:
+            assert threading.active_count() == before + n
+            assert len(rt._workers) == n
+        finally:
+            rt.shutdown()
+        assert threading.active_count() == before
+
     def test_construction_starts_no_threads(self):
         before = threading.active_count()
         Runtime(4)

@@ -1,7 +1,7 @@
 # Project Overview
 
-> **Status: Phase 0 — Initialization. No runtime implementation exists.**
-> Last updated: 2026-08-31
+> **Status: Phase 1 — minimal M:N scheduler implemented (S0–S6); Phase 0 (initialization) is complete.**
+> Last updated: 2026-09-26 (see `progress-tracker.md` for what exists)
 
 ## 1. What this project is
 
