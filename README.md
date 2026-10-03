@@ -7,8 +7,8 @@ real OS threads.
 > **Status: experimental, Phase 1.** A minimal scheduler (one global queue,
 > N workers) is implemented and tested. It is a research project, **not
 > production-ready**, and makes **no performance claims** here. A standalone
-> CPU-utilisation benchmark script exists (see [Benchmarking](#benchmarking));
-> there is no general benchmark suite yet.
+> CPU-utilisation benchmark script exists on a shared benchmark harness (see
+> [Benchmarking](#benchmarking)); Phase 2 (measurement only) is in progress.
 
 ## Why
 
@@ -235,7 +235,8 @@ Layout:
 | `pyron/worker.py` | `Worker`, one OS thread running tasks |
 | `pyron/runtime.py` | `Runtime`, lifecycle, spawn, shutdown |
 | `pyron/errors.py` | Error types |
-| `benchmarks/cpu_saturation.py` | Standalone CPU-utilisation / scaling benchmark (not part of the tests) |
+| `benchmarks/_harness.py` | Shared benchmark harness: environment, GIL guard, timing, statistics, output |
+| `benchmarks/cpu_saturation.py` | CPU-utilisation / scaling benchmark (not part of the tests) |
 
 ### Benchmarking
 
@@ -247,12 +248,15 @@ otherwise idle machine:
 
 ```bash
 .venv/bin/python benchmarks/cpu_saturation.py --quick          # ~5 s smoke test
-.venv/bin/python benchmarks/cpu_saturation.py                  # full sweep, ~3 min
-.venv/bin/python benchmarks/cpu_saturation.py --with-processes --json out.json
+.venv/bin/python benchmarks/cpu_saturation.py                  # full sweep, several minutes
+.venv/bin/python benchmarks/cpu_saturation.py --with-processes --json
 ```
 
-Each run prints its environment (CPython build, GIL state, OS, CPU, core
-layout, date, git commit). Read the module docstring for what each column
+Defaults are one unrecorded warm-up repetition and five recorded ones;
+`--reps 3 --warmup 0` gives Experiment 1's method. `--json` with no path writes
+the raw samples to `benchmarks/results/` (git-ignored). Each run prints its
+environment (CPython build, GIL state, OS, CPU, core layout, power, date, git
+commit) and fails loudly on a hang or if the GIL turns on mid-run. Read the module docstring for what each column
 means and for the caveats before quoting a number; recorded runs live in
 [`progress-tracker.md`](context/progress-tracker.md) under Experiments.
 

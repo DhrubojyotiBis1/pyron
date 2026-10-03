@@ -1,6 +1,6 @@
 # Phase 2 — Scope
 
-> Status: PLANNED — not started. Last updated: 2026-10-04.
+> Status: IN PROGRESS (P2.1). Scope unchanged. Last updated: 2026-10-04.
 > Scope changes for this phase must be flagged and recorded here, not
 > absorbed silently (`ai-workflow-rules.md` §2).
 
