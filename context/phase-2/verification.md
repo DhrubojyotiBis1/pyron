@@ -1,8 +1,8 @@
 # Phase 2 — Verification
 
 > Status: design-time checks (§1–§4) performed against the written plan on
-> 2026-10-04. Execution-time checks (§5) and the completion checklist (§6)
-> are pending; they are run as each increment lands. Last updated:
+> 2026-10-04. Execution-time checks (§5): P2.1 partly done (see the P2.1
+> row); the rest pending. The completion checklist (§6) is pending. Last updated:
 > 2026-10-04.
 
 Two kinds of verification are kept apart: (A) checks that the *plan* is
@@ -96,7 +96,7 @@ No violation found.
 
 | Increment | Checks |
 |---|---|
-| P2.1 | Harness unit tests pass; full suite still passes; every script's `--quick` runs on the free-threaded build; reproduction run meets the pass condition in `implementation.md` §3.1, or the discrepancy is investigated and recorded before continuing; `benchmarks/results/` is git-ignored |
+| P2.1 | Harness unit tests pass; full suite still passes; every script's `--quick` runs on the free-threaded build; reproduction run meets the pass condition in `implementation.md` §3.1, or the discrepancy is investigated and recorded before continuing; `benchmarks/results/` is git-ignored. **2026-10-04:** unit tests (36) and full suite (196) pass; `--quick` runs; results folder ignored (tested); reproduction 37/40 rows within spread, discrepancy investigated and recorded (`../progress-tracker.md` Experiments 2–3), not resolved — thermal throttling, owner decision pending |
 | P2.2 | Exactly-once delivery holds in every run of every variant; spread recorded per configuration; the tracker entry states that S is an upper bound |
 | P2.3 | Default configuration of the extended script still reproduces P2.1's numbers within spread (the extension did not change the defaults); every result verified; granularity point reported per producer count |
 | P2.4 | Batch sizes large enough that timer overhead is negligible against the measured time (checked by timing an empty batch); reconciliation and unexplained remainder recorded; profiler used only if confirmed to work on free-threaded 3.14 |

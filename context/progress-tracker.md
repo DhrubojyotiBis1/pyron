@@ -3,11 +3,11 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-10-04 (Phase 2 planned in `phase-2/`; not started)
+> Last updated: 2026-10-04 (Phase 2 in progress: P2.1 harness built; reproduction 37/40; blocked on thermal decision)
 
 ## Current phase
 
-**Phase 2 — Measure, then decide. Status: PLANNED — not started (plan written 2026-10-04; sign-off decision 4 pending).**
+**Phase 2 — Measure, then decide. Status: IN PROGRESS — P2.1 (harness built and tested; reproduction run 37/40 within spread; blocked on an owner decision about thermal throttling). Sign-off decision 4 pending.**
 
 Phase 1 (minimal M:N scheduler: 1 global queue, N workers) is COMPLETE
 (S0–S6 done; exit criteria met — see Validation status). Phase 0
@@ -97,9 +97,38 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
   - ADR-001..003 promoted to `CONFIRMED`; `phase-1/verification.md` §6 checklist completed; status headers swept across `context/` ✓
   - All 160 tests (S0–S6) passing ✓
 - No work-stealing implementation exists.
-- No general benchmark suite exists. One standalone script does: `benchmarks/cpu_saturation.py`
-  (CPU-utilisation / scaling sweep; not run by pytest). Its one recorded run is Experiment 1 below.
-  It is a measurement tool outside the runtime, not a Phase 1 deliverable; no `pyron/` code changed.
+
+## Implementation progress: Phase 2 (P2.1 in progress)
+
+- **P2.1 IN PROGRESS (blocked on owner decision)**: shared benchmark harness; `cpu_saturation.py` ported
+  - `benchmarks/_harness.py`: `burn`, `calibrate_ns_per_iter`, `cpu_times`, `Window`, `gil_enabled`, `_cmd`
+    moved unchanged from `cpu_saturation.py` (AST-identical); `Sample` / `Stats` / `summarize` generalized
+    (configuration as a mapping; median, spread, min, max, cores, sys share — same arithmetic) ✓
+  - New in the harness: `environment()` extended (usable CPUs, Linux core types by `cpu_capacity` or max
+    frequency, Linux governor and AC/battery, loaded third-party extension modules); `require_free_threading()`
+    checked at start-up and after every run; `beyond_spread()` / `rel_diff()`; `common_args()`
+    (`--quick`, `--reps`, `--warmup`, `--json [PATH]`, `--allow-gil`); `json_path()` / `write_json()` with
+    default folder `benchmarks/results/` (git-ignored); `watchdog()` (a hung run dumps all stacks and exits
+    non-zero) ✓
+  - `benchmarks/cpu_saturation.py` ported: the measured run bodies (`run_serial`, `run_raw_threads`,
+    `run_processes`, `run_pyron`, `_proc_worker`) are unchanged apart from the error helper's name and how
+    the returned `Sample` is built (both outside the timed window) ✓
+  - Script-level default changes (recorded, not part of the move): 5 recorded repetitions (was 3) and
+    1 unrecorded warm-up repetition (was none); `--reps 3 --warmup 0` restores Experiment 1's method.
+    `--json` with no path writes to `benchmarks/results/` ✓
+  - `run_threads()` deferred to P2.2 (first script that needs it; using it here would change measured code) —
+    recorded in `phase-2/implementation.md` §1
+  - `tests/test_bench_harness.py`: 36 tests (statistics, beyond-spread, GIL guard, environment parsing with fake
+    sysfs, extension detection, CLI flags, JSON path, results folder ignored, watchdog fires in a subprocess and
+    stays disarmed after its block) ✓
+  - Smoke-checked by hand: `--quick` (with `--json`); `--with-processes`; `--producers 3`; warm-up samples excluded
+    from JSON; `PYTHON_GIL=1` refused with exit 2 and accepted with `--allow-gil` (≈1 core, warning printed) ✓
+  - Reproduction run of Experiment 1 done (Experiment 2): **37 of 40 rows within spread; pass condition not fully met.**
+    The three rows outside run code the port did not change (two `raw`, one `serial`); two attempts to isolate port
+    vs environment by an old/new A/B were spoiled by thermal throttling (Experiment 3)
+  - **Blocked on an owner decision** (see Blocked / unresolved): whether to accept the reproduction, and how Phase 2
+    handles thermal throttling on this machine, before P2.2 starts
+- No `pyron/` code changed in Phase 2.
 
 ## Completed
 
@@ -116,14 +145,14 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
 
 ## In progress
 
-*(nothing — Phase 2 planned, not started)*
+- P2.1 — harness and port done and tested; reproduction run done (Experiment 2, 37/40 rows within spread); blocked on the owner decision below.
 
 ## Planned (not started)
 
 Phase 2 increments (details in `phase-2/plan.md` §3). P2.5 may run
 alongside P2.2–P2.4; P2.6 comes last.
 
-1. P2.1 — Shared benchmark harness; port `cpu_saturation.py`; reproduction run of Experiment 1
+1. P2.1 — *in progress* (see above)
 2. P2.2 — Scheduler contention baseline (incl. sharded-queue upper bound, hand-off latency)
 3. P2.3 — End-to-end baseline: `Runtime` vs `ThreadPoolExecutor` vs raw threads across task sizes
 4. P2.4 — Per-task cost breakdown and reconciliation
@@ -151,6 +180,27 @@ in `project-overview.md` §4 (vision) at most, not here — this section
 should only ever list what's actually queued to start next.
 
 ## Blocked / unresolved
+
+- **P2.1 → P2.2 gate (owner decision needed, raised 2026-10-04).** The reproduction run (Experiment 2) has 3 of 40
+  rows outside the pass condition, all in code the port did not change; the A/B meant to confirm that the port is not
+  the cause was inconclusive because this machine (MacBook Air M2, fanless) throttles within ~30 s of all-core load
+  and stays throttled after it (Experiment 3). Proposed options, not chosen:
+  1. Accept P2.1 on the evidence (unchanged measured code; 37/40 rows), and add thermal guards to the harness before
+     P2.2: record calibration before *and* after each configuration and flag drift; flag a measured task size that
+     differs from the target; a cool-down gate long enough to undo heat soak; interleave variants within a repetition
+     (already the case). A recorded harness change.
+  2. Make a machine with active cooling (the owner's planned homogeneous-core runs) the primary environment for
+     P2.2–P2.4, keeping the M2 runs as secondary evidence. Changes `phase-2/plan.md` §6 decision 3.
+  3. Re-run the reproduction after a long idle period (≥ 30 min), and the old/new A/B with a long cool-down per run,
+     before deciding.
+  This also contradicts `phase-2/scope.md` §3 limitation 8 as written (it assumed throttling needs long runs); the
+  §5 risk table in `phase-2/plan.md` has no thermal row. Both to be amended with the decision.
+  **Next step (owner, 2026-10-04): option 3 first, run in the morning on a cooled machine.** Procedure: original
+  script (`git show eede54b:benchmarks/cpu_saturation.py`) vs the ported script, alternating old/new, new/old,
+  old/new over 3 rounds, on the control command and on `--workers 16 --task-ms 1 --reps 3 --work-seconds 3`
+  (ported script with `--warmup 0`); before every run, ≥ 3 min idle and then a fresh calibration ≤ 31.5 ns/iter;
+  AC power, machine otherwise unused. Compare each row old vs new with `beyond_spread`, both as measured and
+  normalized by each process's measured task size. A first attempt on 2026-10-04 was stopped before any run.
 
 - Phase 2 sign-off decision 4 (Phase 3 decision rules, `phase-2/plan.md`
   §7) is pending. It does not block P2.1 or P2.5, but must be answered
@@ -223,6 +273,118 @@ Follow-up: none queued. If pursued: repeat on a homogeneous-core machine;
 vary producers at 0.1 ms and below; a longer sustained run
 (`--work-seconds 60`); profile where the ~9 µs/task goes.
 
+### Experiment 2 — P2.1 reproduction of Experiment 1 on the ported script — 2026-10-04
+Question: Did porting `cpu_saturation.py` onto `benchmarks/_harness.py` change what it measures?
+
+Method: Experiment 1's two commands, repeated with the ported script and Experiment 1's method (3 recorded reps,
+no warm-up), back to back:
+`.venv/bin/python benchmarks/cpu_saturation.py --reps 3 --warmup 0 --json` (sweep: 10 / 1 / 0.1 ms;
+T = 1, 2, 4, 8, 16) then
+`.venv/bin/python benchmarks/cpu_saturation.py --with-processes --workers 4,8 --task-ms 1 --reps 3 --warmup 0 --work-seconds 3 --json` (control).
+Reference: Experiment 1's printed per-row median wall and spread, recovered from the session record of the 2026-09-26
+run (raw JSON was not kept). Pass condition (`phase-2/implementation.md` §3.1): `beyond_spread(new median, new
+spread, Exp 1 median, Exp 1 spread)` false for every row. A second column normalizes the new median by the
+measured task size (Exp 1 ÷ new, as printed by the script) to remove calibration differences between processes.
+Environment: Apple M2 MacBook Air (Mac14,2, fanless; 4P + 4E, 8 logical CPUs), macOS 26.2 arm64, AC power, Low
+Power Mode off, CPython 3.14.7 free-threaded (GIL disabled), Pyron 0.0.1-phase1, base commit `eede54b` + the
+uncommitted P2.1 working tree; no third-party extension modules loaded. Calibration 29.8 ns/iter (sweep), 30.3
+(control). Started 02:59:38 IST; sweep 2 min 43 s, control 28 s. Load average 4.5 before the start, mostly
+other desktop apps.
+
+Result:
+
+| Run | Task | Kind | T | Exp 1 wall s (±%) | P2.1 wall s (±%) | diff | limit | result | diff, task-size normalized |
+|---|---|---|---|---|---|---|---|---|---|
+| sweep | 10 ms | serial | 1 | 3.039 (0.3) | 3.061 (1.0) | +0.7% | 1.0% | within | -0.0% within |
+| sweep | 10 ms | raw | 1 | 3.076 (2.0) | 3.040 (1.7) | -1.2% | 2.0% | within | -1.9% within |
+| sweep | 10 ms | raw | 2 | 1.584 (1.9) | 1.566 (0.1) | -1.1% | 1.9% | within | -1.9% within |
+| sweep | 10 ms | raw | 4 | 0.890 (11.6) | 0.894 (4.8) | +0.4% | 11.6% | within | -0.3% within |
+| sweep | 10 ms | raw | 8 | 0.823 (12.2) | 0.840 (13.2) | +2.0% | 13.2% | within | +1.3% within |
+| sweep | 10 ms | raw | 16 | 0.819 (12.3) | 0.798 (9.4) | -2.5% | 12.3% | within | -3.2% within |
+| sweep | 10 ms | pyron | 1 | 3.033 (2.4) | 3.064 (0.8) | +1.0% | 2.4% | within | +0.3% within |
+| sweep | 10 ms | pyron | 2 | 1.575 (3.5) | 1.571 (1.5) | -0.3% | 3.5% | within | -1.0% within |
+| sweep | 10 ms | pyron | 4 | 0.909 (7.1) | 0.912 (2.0) | +0.3% | 7.1% | within | -0.4% within |
+| sweep | 10 ms | pyron | 8 | 0.848 (9.4) | 0.894 (17.5) | +5.4% | 17.5% | within | +4.6% within |
+| sweep | 10 ms | pyron | 16 | 0.811 (10.4) | 0.758 (10.5) | -6.5% | 10.5% | within | -7.2% within |
+| sweep | 1 ms | serial | 1 | 3.103 (5.9) | 3.195 (6.4) | +2.9% | 6.4% | within | -0.0% within |
+| sweep | 1 ms | raw | 1 | 3.019 (0.3) | 3.081 (6.4) | +2.1% | 6.4% | within | -0.9% within |
+| sweep | 1 ms | raw | 2 | 1.584 (1.0) | 1.609 (3.5) | +1.6% | 3.5% | within | -1.4% within |
+| sweep | 1 ms | raw | 4 | 0.907 (1.6) | 0.927 (23.8) | +2.2% | 23.8% | within | -0.7% within |
+| sweep | 1 ms | raw | 8 | 0.860 (17.4) | 0.744 (3.5) | -13.5% | 17.4% | within | -16.0% within |
+| sweep | 1 ms | raw | 16 | 0.764 (2.3) | 0.805 (4.7) | +5.3% | 4.7% | **beyond** | +2.2% within |
+| sweep | 1 ms | pyron | 1 | 3.032 (0.3) | 3.113 (7.4) | +2.7% | 7.4% | within | -0.3% within |
+| sweep | 1 ms | pyron | 2 | 1.618 (2.6) | 1.629 (10.8) | +0.7% | 10.8% | within | -2.3% within |
+| sweep | 1 ms | pyron | 4 | 0.940 (0.5) | 1.014 (10.5) | +7.9% | 10.5% | within | +4.7% within |
+| sweep | 1 ms | pyron | 8 | 0.874 (18.9) | 0.761 (3.0) | -12.9% | 18.9% | within | -15.5% within |
+| sweep | 1 ms | pyron | 16 | 0.786 (2.9) | 0.802 (6.7) | +2.0% | 6.7% | within | -1.0% within |
+| sweep | 0.1 ms | serial | 1 | 3.079 (0.9) | 3.115 (6.4) | +1.2% | 6.4% | within | +0.2% within |
+| sweep | 0.1 ms | raw | 1 | 3.020 (2.9) | 3.062 (1.9) | +1.4% | 2.9% | within | +0.4% within |
+| sweep | 0.1 ms | raw | 2 | 1.605 (2.6) | 1.604 (1.3) | -0.1% | 2.6% | within | -1.0% within |
+| sweep | 0.1 ms | raw | 4 | 0.911 (0.2) | 0.922 (1.6) | +1.2% | 1.6% | within | +0.2% within |
+| sweep | 0.1 ms | raw | 8 | 0.738 (16.5) | 0.753 (5.2) | +2.0% | 16.5% | within | +1.0% within |
+| sweep | 0.1 ms | raw | 16 | 0.800 (2.5) | 0.791 (3.3) | -1.1% | 3.3% | within | -2.1% within |
+| sweep | 0.1 ms | pyron | 1 | 3.303 (0.3) | 3.301 (0.5) | -0.1% | 0.5% | within | -1.0% **beyond** |
+| sweep | 0.1 ms | pyron | 2 | 1.745 (1.7) | 1.733 (0.6) | -0.7% | 1.7% | within | -1.7% within |
+| sweep | 0.1 ms | pyron | 4 | 1.011 (1.9) | 1.021 (2.0) | +1.0% | 2.0% | within | +0.0% within |
+| sweep | 0.1 ms | pyron | 8 | 0.795 (10.0) | 0.808 (7.3) | +1.7% | 10.0% | within | +0.7% within |
+| sweep | 0.1 ms | pyron | 16 | 0.901 (1.6) | 0.895 (1.7) | -0.6% | 1.7% | within | -1.6% within |
+| control | 1 ms | serial | 1 | 3.066 (1.1) | 3.144 (0.9) | +2.5% | 1.1% | **beyond** | -0.0% within |
+| control | 1 ms | raw | 4 | 0.834 (5.6) | 0.918 (6.2) | +10.1% | 6.2% | **beyond** | +7.3% **beyond** |
+| control | 1 ms | raw | 8 | 0.835 (0.6) | 0.894 (10.9) | +7.1% | 10.9% | within | +4.4% within |
+| control | 1 ms | pyron | 4 | 0.870 (18.7) | 0.976 (10.8) | +12.2% | 18.7% | within | +9.4% within |
+| control | 1 ms | pyron | 8 | 0.861 (4.0) | 0.924 (15.0) | +7.4% | 15.0% | within | +4.7% within |
+| control | 1 ms | procs | 4 | 0.884 (8.0) | 0.962 (30.9) | +8.8% | 30.9% | within | +6.1% within |
+| control | 1 ms | procs | 8 | 0.677 (6.5) | 0.696 (19.6) | +2.9% | 19.6% | within | +0.3% within |
+
+- As measured: 37 of 40 rows within spread. Normalized for task size: 38 of 40; the control `serial` row's +2.5%
+  is exactly the task-size difference (1.048 vs 1.022 ms per task). Normalization at 0.1 ms is limited by
+  Experiment 1 printing the task size to 3 decimals (0.103 ms = ±0.5%), which is why `pyron` ×1 at 0.1 ms
+  crosses its 0.5% limit only after normalization.
+- The rows outside spread are `raw` and `serial` rows, which run code the port left AST-identical; no
+  `pyron` row is outside spread as measured.
+- Old/new A/B to isolate the port (original script from `eede54b` vs ported, alternated over 3 rounds, same
+  commands): inconclusive twice; see Experiment 3.
+
+Conclusion: The pass condition is **not fully met** (37/40). The evidence points to environment drift rather than the
+port: the failing rows run unchanged code, one is fully explained by task size, and the remaining gap (control
+`raw` ×4, +7.3% normalized against a 6.2% limit) is in a run that started right after 2 min 43 s of near-all-core
+load on a fanless machine. That attribution rests on code identity, not on a successful A/B; the A/B could not
+be run cleanly here.
+
+Follow-up: owner decision recorded under Blocked / unresolved.
+
+### Experiment 3 — Thermal throttling of the test machine under sustained load — 2026-10-04
+Question: Why did the old/new A/B for Experiment 2 give 40–100% spreads, and is calibration reliable on this machine?
+
+Method: (a) the A/B itself: 12 fresh processes (old/new × sweep-16 / control × 3 rounds, alternating order), run
+back to back after Experiment 2; each prints its calibration and measured task size. (b) Calibration probe:
+`calibrate_ns_per_iter()` in fresh processes
+(`cd benchmarks && ../.venv/bin/python -c "import _harness as h; print(h.calibrate_ns_per_iter())"`), 6× on an idle
+machine, 6× while another process ran 4 threads of `burn`, then 8× (one every ~2 s) while another process ran 8 threads
+of `burn` for 60 s, then 3× right after that load stopped. (c) A second A/B on the control command only, with a gate before
+each run: wait until a fresh calibration is ≤ 31.5 ns. Same machine and session as Experiment 2, AC power.
+
+Result:
+- (a) 7 of 12 processes calibrated at 58.9–60.9 ns/iter instead of 29.6–31.3, so their "1 ms" task really measured
+  0.70–0.99 ms; walls and spreads are not comparable.
+- (b) Idle: 30.1–30.3 ns (6/6). 4 busy threads elsewhere: 33.6–35.5 ns. 8 busy threads elsewhere: 31.5, 36.9, 39.6,
+  45.4, 49.5, 51.0, 74.2, 64.9 ns over ~30 s, rising steadily; right after the load stopped: 73.4, 61.1, 61.0 ns.
+  `pmset -g therm` recorded no thermal or performance warning.
+- (c) Every gated run calibrated at 29.5–30.4 ns after ≤ 16 s of waiting, but measured task sizes were 1.07–1.36 ms,
+  run spreads 26–82%, and every multi-thread row was 39–80% slower than Experiment 1 (`serial` 7–16%), for both scripts. Old vs new: no row beyond
+  spread, which says nothing at these spreads.
+
+Conclusion: This fanless M2 throttles within tens of seconds of all-core load and stays throttled after the load ends.
+A short single-thread calibration can read "cool" while sustained throughput is still degraded, so the calibration gate in
+(c) did not work. Calibration slowing under load and recovering only slowly fits thermal throttling better than
+efficiency-core placement (it stays slow with the machine idle), but placement was not ruled out directly. Consequences:
+(1) run-to-run spread on this machine is partly thermal, not only noise, and the size and order of a sweep change its results;
+(2) per-process calibration can silently change the task size between runs; (3) the A/B that would have confirmed
+Experiment 2 could not be run cleanly. Hypothesis, untested: part of Experiment 1's up-to-19% spread at 8+ threads was
+thermal.
+
+Follow-up: owner decision recorded under Blocked / unresolved.
+
 When an experiment is run, record it here using this format, regardless of
 outcome:
 
@@ -250,13 +412,21 @@ Follow-up:
 - 2026-09-26 (S6) — **Two test-only flakes found and fixed by repeated runs; neither was a runtime bug.** (1) `test_worker_start_creates_thread` and the `join` test in `test_s4_worker.py` closed the scheduler before asserting the worker thread was alive, so the worker could exit first; they now keep the scheduler open until after the assertion. (2) The new starvation test let the first parent spawn its child before the second parent had been claimed, so an idle worker ran the child; parents now meet at a barrier so every worker is occupied first. Lesson recorded: single passing runs are not enough for these tests; the repeated-run loop caught both.
 - 2026-09-26 (S6) — **Deadlock limitation demonstrated.** With 2 workers and 2 parent tasks each waiting on a queued child, no child ran until a parent's 1 s wait timed out (`scope.md` §3.2). Recorded, not fixed.
 
+- 2026-10-04 (P2.1) — **The test machine throttles under sustained all-core load** (Experiment 3): calibration went from
+  ~30 to ~60–74 ns/iter within ~30 s of 8-thread load and stayed there after the load ended. Phase 2's measurement plan
+  did not account for this; see Blocked / unresolved.
+- 2026-10-04 (P2.1) — **Calibration is per process and can drift between runs**, so the same `--task-ms` can mean a
+  different amount of work in two processes (2.5% between Experiment 1 and 2 at 1 ms; up to ~30% under heat). Compare
+  measured task sizes (printed per table) before comparing walls across processes.
+
 *(further findings — populated as experiments produce results, including negative
 or inconclusive ones)*
 
 ## Validation status
 
-Full suite: 160 tests passing, no warnings (2026-09-26, free-threaded CPython
-3.14.7, GIL disabled — asserted by `tests/conftest.py`).
+Full suite: 196 tests passing — 160 runtime tests (S0–S6) + 36 benchmark-harness
+tests — no warnings (2026-10-04, free-threaded CPython 3.14.7, GIL disabled —
+asserted by `tests/conftest.py`).
 Per component (S0–S6): tested as listed under Implementation progress.
 Known-untested: runs longer than seconds (no hours-long soak); other
 platforms and Python versions (only macOS / Darwin, 3.14.7t); resource
@@ -298,3 +468,5 @@ questions in one place.
 | 2026-09-26 | Added `benchmarks/cpu_saturation.py` (standalone CPU-utilisation/scaling benchmark; no `pyron/` changes) and recorded Experiment 1. Updated stale "no benchmark" statements here, in `README.md` and in `architecture-context.md` §5. Script committed in `a8aa63d` and merged to `development` via PR #2. | Claude Sonnet 5 |
 | 2026-10-04 | Corrected the 2026-09-26 benchmark entry: the script is committed (`a8aa63d`) and merged to `development` (PR #2), not uncommitted. Re-ran full suite on `development`: 160 passing. Documentation only. | Claude Opus 5.5 |
 | 2026-10-04 | Wrote the Phase 2 plan (`context/phase-2/`: plan, scope, implementation, verification) from the owner's draft list, restructured as "measure, then decide"; moved current phase to Phase 2 (planned). Recorded sign-off decisions 1–3; decision 4 (Phase 3 decision rules) pending. Updated `AGENTS.md` summary. Documentation only, no code. | Claude Opus 5.5 |
+| 2026-10-04 | **P2.1 started**: added `benchmarks/_harness.py` (moved workload/timing/environment code unchanged; generalized samples and statistics; extended environment; GIL re-check after every run; beyond-spread test; shared flags; JSON default folder; hang watchdog) and ported `benchmarks/cpu_saturation.py` onto it (measured run bodies unchanged; defaults now 5 reps + 1 warm-up). `tests/test_bench_harness.py` (36 tests); 196 passing. `benchmarks/results/` git-ignored. Corrected `phase-2/implementation.md` §3.1: Experiment 1 was two commands (default sweep + separate process control). Updated README, AGENTS.md, phase-2 status headers. No `pyron/` changes. Reproduction run pending. | Claude Opus 5.5 |
+| 2026-10-04 | **P2.1 reproduction run** (Experiment 2): 37/40 rows within spread; failing rows all in unchanged code. Two old/new A/B attempts spoiled by thermal throttling; probe recorded as Experiment 3. Added two findings and a blocking owner decision (accept P2.1 + add thermal guards / cooled primary machine / re-run after long idle). P2.1 not marked complete. No `pyron/` changes. | Claude Opus 5.5 |

@@ -1,6 +1,6 @@
 # Phase 2 — Plan: Measure, then decide
 
-> **Status: PLANNED — not started. See `../progress-tracker.md` for what exists.**
+> **Status: IN PROGRESS — P2.1 underway (harness built; reproduction 37/40 within spread; blocked on an owner decision about thermal throttling). See `../progress-tracker.md` for what exists.**
 > Last updated: 2026-10-04
 > Sign-off decisions 1–3 in §6 were answered on 2026-10-04; decision 4 (the
 > Phase 3 decision rules) is pending and must be answered before any P2.2–P2.4

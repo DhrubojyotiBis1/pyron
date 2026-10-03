@@ -1,6 +1,8 @@
 # Phase 2 — Implementation Design
 
-> Status: PLANNED — not started. Last updated: 2026-10-04.
+> Status: IN PROGRESS — P2.1 harness built; reproduction run 37/40 rows within
+> spread, blocked on an owner decision about thermal throttling (see
+> `../progress-tracker.md`, Experiments 2–3). Last updated: 2026-10-04.
 > This is the design of the measuring tools, the experiments and ADR-004.
 > Evidence of implementation will be in the committed scripts and in
 > `../progress-tracker.md`, not in this document. Nothing here changes
@@ -22,7 +24,9 @@ script that composes them.
 | `summarize()` / `Stats` | function / data class | Median, spread ((max − min) / median), min, max over repetitions | Extracted, generalized |
 | `write_json()` | function | Environment + every raw sample to a path; default folder git-ignored | Extracted |
 | `common_args()` | function | Shared command-line flags (§2.7) | New |
-| `run_threads()` | function | Start K threads behind a barrier, join with a timeout, fail loudly on a hang | New (replaces repeated inline code) |
+| `beyond_spread()`, `rel_diff()` | functions | The "beyond spread" test of `plan.md` §7, computed rather than judged by eye (§2.5) | New |
+| `watchdog()` | context manager | Fail loudly on a hung run: `faulthandler` dumps every thread's stack and exits non-zero. Guards a run without editing the measured code | New (P2.1) |
+| `run_threads()` | function | Start K threads behind a barrier, join with a timeout, fail loudly on a hang | **Deferred to P2.2** (first script that needs it). Using it in `cpu_saturation.py` would have changed measured code, against §2.1 |
 
 Benchmark scripts (one question each):
 
@@ -97,8 +101,9 @@ all.
 | Flag | Meaning |
 |---|---|
 | `--quick` | Smoke run: seconds, minimal configurations; proves the script works, produces no reportable numbers |
-| `--reps N` | Recorded repetitions per configuration |
-| `--json PATH` | Write raw samples |
+| `--reps N` | Recorded repetitions per configuration (default 5) |
+| `--warmup N` | Unrecorded warm-up repetitions before the recorded ones (default 1; `--reps 3 --warmup 0` is Experiment 1's method) |
+| `--json [PATH]` | Write raw samples; with no PATH, a timestamped file in `benchmarks/results/` |
 | `--allow-gil` | Control run with the GIL enabled |
 | script-specific axes | Comma-separated lists, e.g. `--workers 1,2,4,8` |
 
@@ -116,12 +121,24 @@ all.
 
 ### 3.1 P2.1 — Reproduction run
 
-- Command: `cpu_saturation.py` with Experiment 1's configuration (task sizes
-  10 / 1 / 0.1 ms; workers 1, 2, 4, 8, 16; `--with-processes`), on the same
-  machine, after the port.
-- Pass condition: for each row, the new median wall time lies within the
-  larger of the two recorded spreads of Experiment 1's median. A row
-  outside it is investigated before any Phase 2 benchmark is trusted.
+- Experiment 1 was **two** commands, not one `--with-processes` sweep
+  (corrected 2026-10-04 from the session record of the original run):
+  1. the default sweep — task sizes 10 / 1 / 0.1 ms, workers 1, 2, 4, 8, 16,
+     3 repetitions, no process control;
+  2. the process control — `--with-processes --workers 4,8 --task-ms 1
+     --reps 3 --work-seconds 3`.
+  Both are repeated with the ported script on the same machine, with
+  `--reps 3 --warmup 0` so the method matches exactly.
+- Reference values: Experiment 1's printed per-row median wall time and
+  spread (the raw JSON was not kept; the full tables are copied into the
+  tracker's P2.1 record).
+- Pass condition: for each row, `beyond_spread(new median, new spread,
+  Experiment 1 median, Experiment 1 spread)` is false, i.e. the medians
+  differ (relative to Experiment 1's) by no more than the larger of the two
+  spreads. A row outside it is investigated before any Phase 2 benchmark is
+  trusted.
+- Run under the same conditions as Experiment 1 (AC power, otherwise idle
+  machine); a difference in conditions is recorded with the result.
 - Recorded as its own experiment (it is a re-run, and re-runs are evidence).
 
 ### 3.2 P2.2 — Scheduler contention
@@ -330,7 +347,7 @@ numbers silently (`coding-standards.md` §3–§4).
 
 No spin loops; every wait is a blocking primitive; every join has a timeout.
 
-## 6. File layout (proposed; finalized in P2.1 and recorded in the tracker)
+## 6. File layout (finalized in P2.1; `scheduler_contention.py`, `task_cost.py` and `spikes/` do not exist yet)
 
 | Path | Contents |
 |---|---|

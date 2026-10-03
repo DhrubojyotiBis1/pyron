@@ -6,7 +6,13 @@ quiet machine, with the free-threaded interpreter:
 
     .venv/bin/python benchmarks/cpu_saturation.py
     .venv/bin/python benchmarks/cpu_saturation.py --quick          # smoke test
-    .venv/bin/python benchmarks/cpu_saturation.py --json out.json  # keep raw samples
+    .venv/bin/python benchmarks/cpu_saturation.py --json           # raw samples -> benchmarks/results/
+    .venv/bin/python benchmarks/cpu_saturation.py --reps 3 --warmup 0   # Experiment 1's method
+
+Built on the shared harness (`_harness.py`, Phase 2 P2.1). The defaults are
+the Phase 2 conventions: one unrecorded warm-up repetition, then 5 recorded
+ones. Experiment 1 (2026-09-26) used 3 recorded repetitions and no warm-up;
+`--reps 3 --warmup 0` restores that method exactly.
 
 What is measured
 ----------------
@@ -48,39 +54,46 @@ Caveats (read before quoting any number)
   what it can; results are point-in-time and one-machine (ai-workflow-rules §8).
 - The main thread is the only producer by default (`--producers`); at very
   small task sizes its spawn rate can be the limit, which is a real cost, but
-  it is the producer's, not the queue's, until you raise --producers.
+  it is the producer's, not the queue's, until you raise --producers. With
+  --producers > 1 the producer threads are started inside the window, so
+  their start-up cost is counted.
 - GC stays enabled (as in real use); it is run once before each window.
+- Each run is guarded by a watchdog: a run that hangs dumps every thread's
+  traceback and exits non-zero instead of blocking.
 """
 
 from __future__ import annotations
 
 import argparse
 import gc
-import json
 import multiprocessing
-import os
-import platform
 import statistics
-import subprocess
 import sys
-import sysconfig
 import threading
 import time
-from dataclasses import asdict, dataclass
-from datetime import datetime
-from pathlib import Path
-from typing import Callable, Optional
+from dataclasses import dataclass
+from typing import Optional
 
-try:
-    import resource
-except ImportError:  # Windows: fall back to process_time, no user/sys split
-    resource = None  # type: ignore[assignment]
-
-try:
-    from pyron import Runtime, __version__ as PYRON_VERSION
-except ImportError:  # running from a clone without `pip install -e .`
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from pyron import Runtime, __version__ as PYRON_VERSION
+from _harness import (
+    Sample,
+    Window,
+    burn,
+    calibrate_ns_per_iter,
+    common_args,
+    cpu_times,
+    csv_list,
+    environment,
+    fail,
+    gil_enabled,
+    json_path,
+    print_environment,
+    require_free_threading,
+    summarize,
+    usable_cpus,
+    watchdog,
+    write_json,
+)
+from pyron import Runtime
 
 
 # --------------------------------------------------------------------------
@@ -88,83 +101,24 @@ except ImportError:  # running from a clone without `pip install -e .`
 # --------------------------------------------------------------------------
 
 
-def burn(iters: int) -> int:
-    """Pure-Python CPU work. Touches only locals: no shared objects, no I/O."""
-    x = 0
-    for i in range(iters):
-        x = (x * 5 + i) & 0xFFFFF
-    return x
-
-
 def pyron_task(iters: int) -> tuple[int, int]:
     """`burn` plus the id of the thread that ran it (to count workers used)."""
     return burn(iters), threading.get_ident()
 
 
-def calibrate_ns_per_iter() -> float:
-    """Best-of-N single-thread cost of one `burn` iteration, in nanoseconds."""
-    n = 200_000
-    burn(50_000)
-    best = float("inf")
-    for _ in range(7):
-        t0 = time.perf_counter()
-        burn(n)
-        best = min(best, time.perf_counter() - t0)
-    return best / n * 1e9
-
-
 # --------------------------------------------------------------------------
-# Measurement
+# Measurement (the run bodies are unchanged from Experiment 1; only the
+# Sample they return is the harness's generalized one)
 # --------------------------------------------------------------------------
 
 
-def cpu_times() -> tuple[float, float]:
-    """(user, sys) CPU seconds consumed so far by every thread of this process."""
-    if resource is not None:
-        ru = resource.getrusage(resource.RUSAGE_SELF)
-        return ru.ru_utime, ru.ru_stime
-    return time.process_time(), 0.0
-
-
-@dataclass
-class Sample:
-    """One timed run."""
-
-    kind: str  # "serial" | "raw" | "pyron"
-    workers: int
-    n_tasks: int
-    wall: float
-    user: float
-    sys: float
-    threads_used: int  # distinct threads that executed tasks
-
-    @property
-    def cpu(self) -> float:
-        return self.user + self.sys
-
-
-class Window:
-    """Wall + CPU accounting around a block: `with Window() as w: ...`."""
-
-    def __enter__(self) -> "Window":
-        self._u0, self._s0 = cpu_times()
-        self._t0 = time.perf_counter()
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self.wall = time.perf_counter() - self._t0
-        u1, s1 = cpu_times()
-        self.user = u1 - self._u0
-        self.sys = s1 - self._s0
+def _sample(kind: str, workers: int, n_tasks: int, wall: float, user: float, sys_: float, used: int) -> Sample:
+    return Sample(kind, {"workers": workers, "n_tasks": n_tasks}, wall, user, sys_, used)
 
 
 def _split(n_tasks: int, parts: int) -> list[int]:
     base, extra = divmod(n_tasks, parts)
     return [base + (1 if i < extra else 0) for i in range(parts)]
-
-
-def _fail(what: str) -> RuntimeError:
-    return RuntimeError(f"benchmark run invalid: {what}")
 
 
 def run_serial(n_tasks: int, iters: int, expected: int) -> Sample:
@@ -174,8 +128,8 @@ def run_serial(n_tasks: int, iters: int, expected: int) -> Sample:
         for _ in range(n_tasks):
             last = burn(iters)
     if last != expected:
-        raise _fail("serial result mismatch")
-    return Sample("serial", 1, n_tasks, w.wall, w.user, w.sys, 1)
+        raise fail("serial result mismatch")
+    return _sample("serial", 1, n_tasks, w.wall, w.user, w.sys, 1)
 
 
 def run_raw_threads(n_threads: int, n_tasks: int, iters: int, expected: int) -> Sample:
@@ -214,10 +168,10 @@ def run_raw_threads(n_threads: int, n_tasks: int, iters: int, expected: int) -> 
     if errors:
         raise errors[0]
     if sum(ran) != n_tasks:
-        raise _fail(f"raw threads ran {sum(ran)} of {n_tasks} tasks")
+        raise fail(f"raw threads ran {sum(ran)} of {n_tasks} tasks")
     if any(r != expected for r in results):
-        raise _fail("raw-thread result mismatch")
-    return Sample("raw", n_threads, n_tasks, w.wall, w.user, w.sys, sum(1 for n in ran if n))
+        raise fail("raw-thread result mismatch")
+    return _sample("raw", n_threads, n_tasks, w.wall, w.user, w.sys, sum(1 for n in ran if n))
 
 
 def _proc_worker(iters: int, n_tasks: int, counter, ready, go, out) -> None:
@@ -265,12 +219,12 @@ def run_processes(n_procs: int, n_tasks: int, iters: int, expected: int) -> Samp
         for p in procs:
             p.join(timeout=30)
     if sum(r[2] for r in reports) != n_tasks:
-        raise _fail("process baseline lost or duplicated tasks")
+        raise fail("process baseline lost or duplicated tasks")
     if any(r[3] != expected for r in reports if r[2]):
-        raise _fail("process baseline result mismatch")
+        raise fail("process baseline result mismatch")
     user = sum(r[0] for r in reports)
     sys_ = sum(r[1] for r in reports)
-    return Sample("procs", n_procs, n_tasks, w.wall, user, sys_, sum(1 for r in reports if r[2]))
+    return _sample("procs", n_procs, n_tasks, w.wall, user, sys_, sum(1 for r in reports if r[2]))
 
 
 def run_pyron(
@@ -312,11 +266,11 @@ def run_pyron(
         raise errors[0]
     flat = [r for out in outputs for r in out]
     if len(flat) != n_tasks:
-        raise _fail(f"{len(flat)} results for {n_tasks} tasks (lost or duplicated work)")
+        raise fail(f"{len(flat)} results for {n_tasks} tasks (lost or duplicated work)")
     if any(checksum != expected for checksum, _ in flat):
-        raise _fail("pyron result mismatch")
+        raise fail("pyron result mismatch")
     used = len({tid for _, tid in flat})
-    return Sample("pyron", n_workers, n_tasks, w.wall, w.user, w.sys, used)
+    return _sample("pyron", n_workers, n_tasks, w.wall, w.user, w.sys, used)
 
 
 # --------------------------------------------------------------------------
@@ -325,7 +279,9 @@ def run_pyron(
 
 
 @dataclass
-class Stats:
+class Row:
+    """One table row: the harness summary of a (kind, T) cell plus this script's derived metrics."""
+
     kind: str
     workers: int
     n_tasks: int
@@ -339,24 +295,22 @@ class Stats:
     threads_used_min: int
 
 
-def summarize(samples: list[Sample], serial_wall: float, ncpu: int) -> Stats:
-    walls = [s.wall for s in samples]
-    wall = statistics.median(walls)
-    cores = statistics.median(s.cpu / s.wall for s in samples)
-    sys_share = statistics.median(s.sys / s.cpu if s.cpu else 0.0 for s in samples)
+def summarize_row(samples: list[Sample], serial_wall: float, ncpu: int) -> Row:
+    st = summarize(samples)
     first = samples[0]
-    return Stats(
-        kind=first.kind,
-        workers=first.workers,
-        n_tasks=first.n_tasks,
-        wall=wall,
-        spread=(max(walls) - min(walls)) / wall,
-        cores=cores,
-        util=cores / ncpu,
-        sys_share=sys_share,
-        speedup=serial_wall / wall,
-        tasks_per_s=first.n_tasks / wall,
-        threads_used_min=min(s.threads_used for s in samples),
+    n_tasks = first.config["n_tasks"]
+    return Row(
+        kind=first.variant,
+        workers=first.config["workers"],
+        n_tasks=n_tasks,
+        wall=st.wall,
+        spread=st.spread,
+        cores=st.cores,
+        util=st.cores / ncpu,
+        sys_share=st.sys_share,
+        speedup=serial_wall / st.wall,
+        tasks_per_s=n_tasks / st.wall,
+        threads_used_min=st.threads_used_min,
     )
 
 
@@ -366,7 +320,7 @@ HEADER = (
 )
 
 
-def format_row(st: Stats, ncpu: int, raw: Optional[Stats]) -> str:
+def format_row(st: Row, ncpu: int, raw: Optional[Row]) -> str:
     eff = st.speedup / min(st.workers, ncpu) * 100
     vs_raw = f"{st.tasks_per_s / raw.tasks_per_s * 100:>9.0f}" if raw else f"{'':>9}"
     used = "" if st.threads_used_min == st.workers or st.kind == "serial" else (
@@ -380,63 +334,8 @@ def format_row(st: Stats, ncpu: int, raw: Optional[Stats]) -> str:
 
 
 # --------------------------------------------------------------------------
-# Environment
-# --------------------------------------------------------------------------
-
-
-def _cmd(*argv: str) -> Optional[str]:
-    try:
-        out = subprocess.run(argv, capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
-
-
-def gil_enabled() -> bool:
-    check = getattr(sys, "_is_gil_enabled", None)
-    return True if check is None else bool(check())
-
-
-def environment(ncpu: int) -> dict:
-    root = Path(__file__).resolve().parent.parent
-    env: dict = {
-        "date": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "python": sys.version.replace("\n", " "),
-        "executable": sys.executable,
-        "free_threaded_build": bool(sysconfig.get_config_var("Py_GIL_DISABLED")),
-        "gil_enabled": gil_enabled(),
-        "os": platform.platform(),
-        "machine": platform.machine(),
-        "logical_cpus": os.cpu_count(),
-        "usable_cpus": ncpu,
-        "pyron_version": PYRON_VERSION,
-        "git_commit": _cmd("git", "-C", str(root), "rev-parse", "--short", "HEAD"),
-        "git_dirty": bool(_cmd("git", "-C", str(root), "status", "--porcelain")),
-    }
-    if sys.platform == "darwin":
-        env["cpu"] = _cmd("sysctl", "-n", "machdep.cpu.brand_string")
-        env["performance_cores"] = _cmd("sysctl", "-n", "hw.perflevel0.logicalcpu")
-        env["efficiency_cores"] = _cmd("sysctl", "-n", "hw.perflevel1.logicalcpu")
-        batt = _cmd("pmset", "-g", "batt")
-        env["power"] = batt.splitlines()[0] if batt else None
-    elif sys.platform.startswith("linux"):
-        try:
-            for line in Path("/proc/cpuinfo").read_text().splitlines():
-                if line.startswith("model name"):
-                    env["cpu"] = line.split(":", 1)[1].strip()
-                    break
-        except OSError:
-            pass
-    return env
-
-
-# --------------------------------------------------------------------------
 # Driver
 # --------------------------------------------------------------------------
-
-
-def _csv(text: str, cast: Callable) -> list:
-    return [cast(p) for p in text.split(",") if p.strip()]
 
 
 def default_workers(ncpu: int) -> list[int]:
@@ -456,60 +355,58 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     ap.add_argument("--workers", help="thread counts, comma-separated (default: 1,2,4,[8,]ncpu,2*ncpu)")
     ap.add_argument("--task-ms", help="task durations in ms, comma-separated (default: 10,1,0.1)")
     ap.add_argument("--work-seconds", type=float, help="serial-equivalent CPU seconds per run (default: 3)")
-    ap.add_argument("--reps", type=int, help="repetitions per configuration (default: 3)")
     ap.add_argument("--producers", type=int, default=1, help="threads spawning tasks (default: 1)")
     ap.add_argument("--max-tasks", type=int, default=100_000, help="cap on tasks per run (default: 100000)")
-    ap.add_argument("--json", metavar="PATH", help="also write environment + every raw sample as JSON")
-    ap.add_argument("--quick", action="store_true", help="short smoke test (0.5 s work, 2 reps, 1 ms tasks, workers 1 and ncpu)")
     ap.add_argument("--with-processes", action="store_true", help="also run the multi-process control (separates hardware limits from interpreter scaling)")
-    ap.add_argument("--allow-gil", action="store_true", help="run even if the GIL is enabled (control run; expect ~1 core)")
+    common_args(
+        ap,
+        quick_help="short smoke test (0.5 s work, 2 reps, no warm-up, 1 ms tasks, workers 1 and ncpu); no reportable numbers",
+    )
     return ap.parse_args(argv)
+
+
+def run_timeout(work_s: float) -> float:
+    """Watchdog limit for one run: ~20x the slowest expected run (serial, ~work_s), plus start-up slack."""
+    return 60.0 + 20.0 * work_s
 
 
 def main(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
-    ncpu = (getattr(os, "process_cpu_count", None) or os.cpu_count)() or 1
+    ncpu = usable_cpus()
+    require_free_threading(args.allow_gil, "at start-up, after imports")
 
-    if gil_enabled() and not args.allow_gil:
-        print(
-            "error: the GIL is enabled in this interpreter, so threads cannot run\n"
-            "Python in parallel and this would measure the wrong thing.\n"
-            f"  interpreter: {sys.executable}\n"
-            "  use a free-threaded build (e.g. .venv/bin/python), or pass --allow-gil\n"
-            "  to record a GIL control run.",
-            file=sys.stderr,
-        )
-        return 2
-
-    workers = _csv(args.workers, int) if args.workers else (
+    workers = csv_list(args.workers, int) if args.workers else (
         [1, ncpu] if args.quick else default_workers(ncpu)
     )
-    task_ms = _csv(args.task_ms, float) if args.task_ms else ([1.0] if args.quick else [10.0, 1.0, 0.1])
+    task_ms = csv_list(args.task_ms, float) if args.task_ms else ([1.0] if args.quick else [10.0, 1.0, 0.1])
     work_s = args.work_seconds if args.work_seconds is not None else (0.5 if args.quick else 3.0)
-    reps = args.reps if args.reps is not None else (2 if args.quick else 3)
+    reps = args.reps if args.reps is not None else (2 if args.quick else 5)
+    warmup = args.warmup if args.warmup is not None else (0 if args.quick else 1)
     if min(workers) < 1 or min(task_ms) <= 0 or work_s <= 0 or reps < 1 or args.producers < 1:
         print("error: workers, task-ms, work-seconds, reps and producers must be positive", file=sys.stderr)
         return 2
+    if warmup < 0:
+        print("error: warmup must be zero or positive", file=sys.stderr)
+        return 2
 
-    env = environment(ncpu)
-    print("Pyron CPU-saturation benchmark")
-    print("=" * 30)
-    for key, value in env.items():
-        print(f"  {key:<20}{value}")
-    print(f"  {'workers':<20}{workers}")
-    print(f"  {'task ms':<20}{task_ms}")
-    print(f"  {'work per run':<20}{work_s} s serial-equivalent (cap {args.max_tasks} tasks)")
-    print(f"  {'reps / producers':<20}{reps} / {args.producers}")
-    print(flush=True)
+    env = environment()
+    print_environment("Pyron CPU-saturation benchmark", env, {
+        "workers": workers,
+        "task ms": task_ms,
+        "work per run": f"{work_s} s serial-equivalent (cap {args.max_tasks} tasks)",
+        "reps / producers": f"{reps} / {args.producers}",
+        "warm-up reps": warmup,
+    })
 
     ns_per_iter = calibrate_ns_per_iter()
     print(f"calibration: {ns_per_iter:.1f} ns per burn iteration (single thread)\n", flush=True)
 
     all_samples: list[dict] = []
     configs: list[dict] = []
-    summary: list[tuple[float, dict[int, Stats], dict[int, Stats], dict[int, Stats]]] = []  # (task ms, pyron, raw, procs)
+    summary: list[tuple[float, dict[int, Row], dict[int, Row], dict[int, Row]]] = []  # (task ms, pyron, raw, procs)
     kinds = ("raw", "pyron") + (("procs",) if args.with_processes else ())
-    total_runs = len(task_ms) * reps * (1 + len(kinds) * len(workers))
+    total_runs = len(task_ms) * (warmup + reps) * (1 + len(kinds) * len(workers))
+    timeout = run_timeout(work_s)
     done = 0
 
     for ms in task_ms:
@@ -517,33 +414,37 @@ def main(argv: Optional[list[str]] = None) -> int:
         n_tasks = min(args.max_tasks, max(round(work_s * 1000 / ms), 4 * max(workers)))
         expected = burn(iters)
         by_key: dict[tuple[str, int], list[Sample]] = {}
-        for rep in range(reps):
+        for rep in range(-warmup, reps):  # negative reps are the unrecorded warm-up
             plan = [("serial", 1)] + [(k, t) for t in workers for k in kinds]
             for kind, t in plan:
-                if kind == "serial":
-                    s = run_serial(n_tasks, iters, expected)
-                elif kind == "raw":
-                    s = run_raw_threads(t, n_tasks, iters, expected)
-                elif kind == "procs":
-                    s = run_processes(t, n_tasks, iters, expected)
-                else:
-                    s = run_pyron(t, n_tasks, iters, expected, args.producers)
-                by_key.setdefault((kind, t), []).append(s)
-                all_samples.append({"task_ms_target": ms, "rep": rep, **asdict(s)})
+                with watchdog(timeout):
+                    if kind == "serial":
+                        s = run_serial(n_tasks, iters, expected)
+                    elif kind == "raw":
+                        s = run_raw_threads(t, n_tasks, iters, expected)
+                    elif kind == "procs":
+                        s = run_processes(t, n_tasks, iters, expected)
+                    else:
+                        s = run_pyron(t, n_tasks, iters, expected, args.producers)
+                require_free_threading(args.allow_gil, f"after a {kind} run")
+                if rep >= 0:
+                    by_key.setdefault((kind, t), []).append(s)
+                    all_samples.append({"task_ms_target": ms, "rep": rep, **s.to_json()})
                 done += 1
                 if sys.stderr.isatty():
-                    print(f"\r[{done}/{total_runs}] task {ms:g} ms  rep {rep + 1}/{reps}  {kind} x{t}      ",
+                    label = f"warm-up {rep + warmup + 1}/{warmup}" if rep < 0 else f"rep {rep + 1}/{reps}"
+                    print(f"\r[{done}/{total_runs}] task {ms:g} ms  {label}  {kind} x{t}      ",
                           end="", file=sys.stderr, flush=True)
 
         serial_wall = statistics.median(x.wall for x in by_key[("serial", 1)])
-        serial = summarize(by_key[("serial", 1)], serial_wall, ncpu)
+        serial = summarize_row(by_key[("serial", 1)], serial_wall, ncpu)
         actual_ms = serial_wall / n_tasks * 1000
         configs.append({"task_ms_target": ms, "task_ms_actual": actual_ms, "iters": iters, "n_tasks": n_tasks})
 
-        raw_stats = {t: summarize(by_key[("raw", t)], serial_wall, ncpu) for t in workers}
-        pyron_stats = {t: summarize(by_key[("pyron", t)], serial_wall, ncpu) for t in workers}
+        raw_stats = {t: summarize_row(by_key[("raw", t)], serial_wall, ncpu) for t in workers}
+        pyron_stats = {t: summarize_row(by_key[("pyron", t)], serial_wall, ncpu) for t in workers}
         proc_stats = (
-            {t: summarize(by_key[("procs", t)], serial_wall, ncpu) for t in workers}
+            {t: summarize_row(by_key[("procs", t)], serial_wall, ncpu) for t in workers}
             if args.with_processes else {}
         )
 
@@ -565,7 +466,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     # ---- headline --------------------------------------------------------
     print("Summary (pyron)")
     print("-" * 15)
-    best_util: Optional[tuple[float, Stats]] = None
+    best_util: Optional[tuple[float, Row]] = None
     for ms, pyron, raw, procs in summary:
         top = max(pyron.values(), key=lambda s: s.speedup)
         ratio = top.tasks_per_s / raw[top.workers].tasks_per_s * 100
@@ -588,12 +489,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     print("was useful. On mixed performance/efficiency cores, speedup cannot reach the logical CPU count")
     print("even for raw threads, so compare pyron against the raw row, not against thr.")
 
-    if gil_enabled():
+    gil_at_end = gil_enabled()
+    if gil_at_end:
         print("\nWARNING: the GIL is enabled; these numbers are a GIL control run.")
-    if args.json:
-        payload = {"environment": env, "args": vars(args), "configs": configs, "samples": all_samples}
-        Path(args.json).write_text(json.dumps(payload, indent=2))
-        print(f"\nraw samples written to {args.json}")
+    out = json_path(args.json, "cpu_saturation")
+    if out is not None:
+        payload = {
+            "environment": env, "gil_enabled_at_end": gil_at_end, "args": vars(args),
+            "resolved": {"workers": workers, "task_ms": task_ms, "work_seconds": work_s,
+                         "reps": reps, "warmup": warmup, "ncpu": ncpu},
+            "configs": configs, "samples": all_samples,
+        }
+        write_json(out, payload)
+        print(f"\nraw samples written to {out}")
     return 0
 
 
