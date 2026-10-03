@@ -3,7 +3,7 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-09-26 (S6 complete; post-Phase-1 CPU-saturation benchmark script added)
+> Last updated: 2026-10-04 (corrected stale commit status of the benchmark script; Phase 1 complete)
 
 ## Current phase
 
@@ -258,4 +258,5 @@ questions in one place.
 | 2026-09-26 | Pre-S5 cleanup: re-ran full suite (116 passing); silenced the expected thread-exception warning on the four intentional-crash tests; corrected stale tracker text (header, phase status, "no code exists", validation status, blocked list). | Claude Sonnet 5 |
 | 2026-09-26 | **S5 Complete**: Runtime. Implemented `pyron/runtime.py` exactly per ADR-003 as written (lifecycle lock, drain/cancel shutdown, final sweep, crash surfaced once) plus start-failure cleanup and a guard against `shutdown()` from a worker thread. Exported public API from `pyron/__init__.py`. `tests/test_s5_runtime.py` with 32 tests; 148 passing (S0–S5), S5 file stable over 25 repeated runs. ADR-003 remains `PROPOSED` until S6. | Claude Sonnet 5 |
 | 2026-09-26 | **S6 Complete**: stress and race hardening; documentation promotion. Added `tests/test_s6_stress.py` (9 tests) and an exact-N-workers test; fixed two racy test assertions in `tests/test_s4_worker.py`; promoted ADR-001..003 to `CONFIRMED` with evidence; completed `phase-1/verification.md` §6; swept stale status headers in `context/` (project-overview, plan, scope, implementation, architecture-context). 160 tests passing. Phase 1 complete. | Claude Sonnet 5 |
-| 2026-09-26 | Added `benchmarks/cpu_saturation.py` (standalone CPU-utilisation/scaling benchmark; no `pyron/` changes) and recorded Experiment 1. Updated stale "no benchmark" statements here, in `README.md` and in `architecture-context.md` §5. Script not yet committed at time of writing. | Claude Sonnet 5 |
+| 2026-09-26 | Added `benchmarks/cpu_saturation.py` (standalone CPU-utilisation/scaling benchmark; no `pyron/` changes) and recorded Experiment 1. Updated stale "no benchmark" statements here, in `README.md` and in `architecture-context.md` §5. Script committed in `a8aa63d` and merged to `development` via PR #2. | Claude Sonnet 5 |
+| 2026-10-04 | Corrected the 2026-09-26 benchmark entry: the script is committed (`a8aa63d`) and merged to `development` (PR #2), not uncommitted. Re-ran full suite on `development`: 160 passing. Documentation only. | Claude Opus 5.5 |
