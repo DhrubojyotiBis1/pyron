@@ -3,15 +3,39 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-10-04 (corrected stale commit status of the benchmark script; Phase 1 complete)
+> Last updated: 2026-10-04 (Phase 2 planned in `phase-2/`; not started)
 
 ## Current phase
 
-**Phase 1 — Minimal M:N scheduler (1 global queue, N workers). Status: COMPLETE (S0–S6 done; exit criteria met — see Validation status).**
+**Phase 2 — Measure, then decide. Status: PLANNED — not started (plan written 2026-10-04; sign-off decision 4 pending).**
 
-Phase 0 (initialization: persistent context system) is complete.
+Phase 1 (minimal M:N scheduler: 1 global queue, N workers) is COMPLETE
+(S0–S6 done; exit criteria met — see Validation status). Phase 0
+(initialization: persistent context system) is complete.
 
 ### Current plan
+
+The Phase 2 plan lives in [`phase-2/`](phase-2/plan.md):
+
+| Document | Contents |
+|---|---|
+| [`phase-2/plan.md`](phase-2/plan.md) | Goal, approach, increments P2.1–P2.6, exit criteria, risks, sign-off decisions, decision rules for Phase 3 |
+| [`phase-2/scope.md`](phase-2/scope.md) | In scope, out of scope, known limitations of the phase's evidence |
+| [`phase-2/implementation.md`](phase-2/implementation.md) | Benchmark harness design, design of each experiment, structure of ADR-004 |
+| [`phase-2/verification.md`](phase-2/verification.md) | Design-time verification (done on paper) and execution-time checks (pending) |
+
+Phase 2 adds no runtime features and changes nothing in `pyron/`. It builds
+a shared benchmark harness, measures scheduler contention, end-to-end cost
+against `ThreadPoolExecutor` and raw threads, and the per-task cost
+breakdown, writes ADR-004 on handling blocking tasks, and then chooses the
+Phase 3 track by decision rules fixed in advance. Sign-off decisions
+answered on 2026-10-04 (`phase-2/plan.md` §6): a phase with no runtime
+features is acceptable; raw benchmark JSON is not committed; the owner will
+run homogeneous-core / other-OS repeats separately. Pending: decision 4,
+the Phase 3 decision rules (`phase-2/plan.md` §7), which must be signed off
+before any P2.2–P2.4 result is looked at.
+
+### Phase 1 plan (complete)
 
 The Phase 1 plan lives in [`phase-1/`](phase-1/plan.md):
 
@@ -92,9 +116,19 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
 
 ## In progress
 
-*(nothing — Phase 1 complete; next phase not yet scoped)*
+*(nothing — Phase 2 planned, not started)*
 
 ## Planned (not started)
+
+Phase 2 increments (details in `phase-2/plan.md` §3). P2.5 may run
+alongside P2.2–P2.4; P2.6 comes last.
+
+1. P2.1 — Shared benchmark harness; port `cpu_saturation.py`; reproduction run of Experiment 1
+2. P2.2 — Scheduler contention baseline (incl. sharded-queue upper bound, hand-off latency)
+3. P2.3 — End-to-end baseline: `Runtime` vs `ThreadPoolExecutor` vs raw threads across task sizes
+4. P2.4 — Per-task cost breakdown and reconciliation
+5. P2.5 — ADR-004: handling blocking tasks (comparison; spikes K1–K3 only)
+6. P2.6 — Decision gate: apply `phase-2/plan.md` §7; record the Phase 3 choice
 
 Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 
@@ -106,10 +140,11 @@ Phase 1 increments, in order (details in `phase-1/plan.md` §3):
 6. ~~S5~~ ✓ DONE
 7. ~~S6~~ ✓ DONE
 
-Deferred until after Phase 1 (not queued, not scheduled): a general
-benchmarking harness beyond `benchmarks/cpu_saturation.py` (required before
-any further performance claim — see `coding-standards.md` §10),
-work-stealing scheduler, suspension/waiting state, backpressure.
+Not queued (Phase 2 decides which comes first): per-worker queues and
+work stealing; a mechanism for blocking tasks (suspension or an alternative,
+per ADR-004); the dependency/fan-out benchmark (belongs to the blocking
+track). Still open and not queued: backpressure, running-task cancellation,
+default worker count.
 
 Note: this list is intentionally short. Long speculative roadmaps belong
 in `project-overview.md` §4 (vision) at most, not here — this section
@@ -117,10 +152,12 @@ should only ever list what's actually queued to start next.
 
 ## Blocked / unresolved
 
-- Nothing blocks Phase 1. Open architectural questions (queue topology,
-  task granularity, backpressure, blocking tasks) remain open in
-  `architecture-context.md` §5 and need a general benchmark harness, which is
-  deferred past Phase 1 (only `benchmarks/cpu_saturation.py` exists).
+- Phase 2 sign-off decision 4 (Phase 3 decision rules, `phase-2/plan.md`
+  §7) is pending. It does not block P2.1 or P2.5, but must be answered
+  before any P2.2–P2.4 result is looked at.
+- Open architectural questions (queue topology, task granularity,
+  backpressure, blocking tasks) remain open in `architecture-context.md` §5.
+  Phase 2 targets topology, granularity and blocking tasks.
 
 ## Experiments performed
 
@@ -260,3 +297,4 @@ questions in one place.
 | 2026-09-26 | **S6 Complete**: stress and race hardening; documentation promotion. Added `tests/test_s6_stress.py` (9 tests) and an exact-N-workers test; fixed two racy test assertions in `tests/test_s4_worker.py`; promoted ADR-001..003 to `CONFIRMED` with evidence; completed `phase-1/verification.md` §6; swept stale status headers in `context/` (project-overview, plan, scope, implementation, architecture-context). 160 tests passing. Phase 1 complete. | Claude Sonnet 5 |
 | 2026-09-26 | Added `benchmarks/cpu_saturation.py` (standalone CPU-utilisation/scaling benchmark; no `pyron/` changes) and recorded Experiment 1. Updated stale "no benchmark" statements here, in `README.md` and in `architecture-context.md` §5. Script committed in `a8aa63d` and merged to `development` via PR #2. | Claude Sonnet 5 |
 | 2026-10-04 | Corrected the 2026-09-26 benchmark entry: the script is committed (`a8aa63d`) and merged to `development` (PR #2), not uncommitted. Re-ran full suite on `development`: 160 passing. Documentation only. | Claude Opus 5.5 |
+| 2026-10-04 | Wrote the Phase 2 plan (`context/phase-2/`: plan, scope, implementation, verification) from the owner's draft list, restructured as "measure, then decide"; moved current phase to Phase 2 (planned). Recorded sign-off decisions 1–3; decision 4 (Phase 3 decision rules) pending. Updated `AGENTS.md` summary. Documentation only, no code. | Claude Opus 5.5 |

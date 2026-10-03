@@ -118,12 +118,15 @@ evidence and an ADR is promoted to `CONFIRMED` (see §9).
   work-stealing? What are the tradeoffs under free-threaded Python
   specifically (lock contention on a global queue vs. stealing overhead)?
   *Phase 1 builds the global-queue baseline (ADR-002) so the comparison
-  becomes possible later. Still open.*
+  becomes possible later. Still open.* *Phase 2 (planned 2026-10-04)
+  measures contention and a sharded-queue upper bound to decide whether to
+  build per-worker queues (`phase-2/plan.md` §7).*
 - **Task granularity**: what's the practical minimum task size where
   scheduling overhead doesn't dominate the work? (Needs benchmarking, not
   guessing.) *Still open; needs a general benchmark harness, deferred past
   Phase 1. `benchmarks/cpu_saturation.py` exists and its one recorded run
   is Experiment 1 in `progress-tracker.md`; it does not settle this question.*
+  *Phase 2 (planned) P2.3 is to record a machine-specific granularity point.*
 - **Task representation**: plain object with a callable, vs. something
   coroutine/generator-based for suspension points, vs. no suspension
   support at all initially? *Phase 1 decides (ADR-001, `DECIDED`) on a
@@ -149,7 +152,9 @@ evidence and an ADR is promoted to `CONFIRMED` (see §9).
   or another task's result holds its worker, and a pool can deadlock if all
   workers block on queued tasks. Accepted as a documented Phase 1
   limitation (`phase-1/scope.md` §3); whether and how to address it
-  (suspension, dependency handling, detection) is open.
+  (suspension, dependency handling, detection) is open. *Phase 2 (planned)
+  compares the options on paper in ADR-004 (`phase-2/implementation.md` §4);
+  nothing is built in Phase 2.*
 
 ## 6. Assumptions currently being made
 
