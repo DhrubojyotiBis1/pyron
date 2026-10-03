@@ -12,7 +12,9 @@ scratch or trusting stale assumptions.
 An experimental Go-inspired M:N concurrency/runtime abstraction for
 free-threaded Python — many logical tasks scheduled onto a smaller pool of
 real threads. **Phase 1 (minimal scheduler: one global queue, N workers) is
-implemented and validated**; the next phase is not yet scoped. Exact current
+implemented and validated**; Phase 2 (measure, then decide: benchmark
+harness, baselines, and an ADR on blocking tasks — no runtime changes) is
+planned in `context/phase-2/` but not started. Exact current
 state: `context/progress-tracker.md`. Full detail:
 `context/project-overview.md`.
 
