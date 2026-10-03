@@ -3,11 +3,11 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-10-04 (Phase 2 in progress: P2.1 harness built; reproduction 37/40; blocked on thermal decision)
+> Last updated: 2026-10-04 (Phase 2 in progress: P2.1 harness built; reproduction 37/40; cloud old/new A/B recorded as Experiment 4; owner decision on P2.1 still pending)
 
 ## Current phase
 
-**Phase 2 — Measure, then decide. Status: IN PROGRESS — P2.1 (harness built and tested; reproduction run 37/40 within spread; blocked on an owner decision about thermal throttling). Sign-off decision 4 pending.**
+**Phase 2 — Measure, then decide. Status: IN PROGRESS — P2.1 (harness built and tested; reproduction run 37/40 within spread; blocked on an owner decision about thermal throttling; a cloud old/new A/B is recorded in Experiment 4). Sign-off decision 4 pending.**
 
 Phase 1 (minimal M:N scheduler: 1 global queue, N workers) is COMPLETE
 (S0–S6 done; exit criteria met — see Validation status). Phase 0
@@ -145,7 +145,7 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
 
 ## In progress
 
-- P2.1 — harness and port done and tested; reproduction run done (Experiment 2, 37/40 rows within spread); blocked on the owner decision below.
+- P2.1 — harness and port done and tested; reproduction run done (Experiment 2, 37/40 rows within spread); old/new A/B run on a cloud VM (Experiment 4: no change to the `raw`/`serial` paths, an unexplained ≈ +2% on the Pyron path at 0.1 ms); blocked on the owner decision below.
 
 ## Planned (not started)
 
@@ -201,6 +201,9 @@ should only ever list what's actually queued to start next.
   (ported script with `--warmup 0`); before every run, ≥ 3 min idle and then a fresh calibration ≤ 31.5 ns/iter;
   AC power, machine otherwise unused. Compare each row old vs new with `beyond_spread`, both as measured and
   normalized by each process's measured task size. A first attempt on 2026-10-04 was stopped before any run.
+  **Update 2026-10-04:** a different old/new A/B was run on a cloud VM instead (Experiment 4: 39/40 rows within the
+  noise floor when normalized; an unexplained ≈ +2% on the Pyron path at 0.1 ms). It used a different machine and
+  procedure than the one above, so the decision is still open.
 
 - Phase 2 sign-off decision 4 (Phase 3 decision rules, `phase-2/plan.md`
   §7) is pending. It does not block P2.1 or P2.5, but must be answered
@@ -385,6 +388,70 @@ thermal.
 
 Follow-up: owner decision recorded under Blocked / unresolved.
 
+### Experiment 4 — P2.1 old/new A/B and 0.1 ms check on a cloud VM — 2026-10-04
+Question: Does the ported `cpu_saturation.py` measure the same thing as the original (`eede54b`), judged by an
+alternated old/new A/B on one machine? (The A/B that Experiment 2 could not complete because of thermal throttling,
+Experiment 3.) Is the small 0.1 ms slowdown seen in the first A/B real?
+
+Method: Four steps on one machine, in this order.
+(a) Test suite: `pytest` on the harness branch at `41af772` (and on `development`'s 160 tests before it).
+(b) One old/new pair, **not alternated** (new script first, then old): the sweep (10 / 1 / 0.1 ms; T = 1, 2, 4, 8,
+16) and the control (`--with-processes --workers 4,8 --task-ms 1 --work-seconds 3`), 3 repetitions each, ported script
+with `--warmup 0`.
+(c) Four alternated rounds (old→new, new→old, old→new, new→old) of the same sweep + control commands, fresh process per
+run, same flags.
+(d) Six alternated rounds of the sweep restricted to `--task-ms 0.1 --workers 1,2,4,8,16 --reps 3`.
+Comparison in (c) and (d): per row, median wall over the rounds for each variant, **normalized by that process's
+measured task size** (removes per-process calibration drift, Finding 2026-10-04), and the raw median ratio. "Noise
+floor" = the larger of the two variants' between-round spread, (max − min) / median over the rounds. This is **looser
+than the plan's pass condition** (`beyond_spread`, which uses the within-run spread of 3 repetitions), so "within" here
+is a weaker statement than in Experiment 2. The analysis scripts and every raw output were kept in the session
+scratchpad only (not committed, per sign-off decision 2 in `phase-2/plan.md` §6).
+Environment: cloud container (Linux 6.18.44-fc-v64, x86_64), Intel Xeon @ 2.10 GHz, 4 logical CPUs, all with the same
+`cpu_capacity` (1024; no performance/efficiency split), no governor or power information exposed; whether the
+vCPUs are dedicated or shared with other tenants is not known. CPython **3.14.0rc2** free-threaded (GIL disabled,
+installed with `uv`; Experiments 1–3 used 3.14.7), Pyron 0.0.1-phase1; ported script at `41af772` (clean tree),
+original at `eede54b`. Calibration 34.5–40.4 ns/iter across processes. Started 22:30 UTC, finished 23:30 UTC on 2026-10-03 (04:00–05:00 IST on
+2026-10-04, after Experiments 2–3).
+
+Result:
+- (a) Full suite on `41af772`: **196 passed** in 8.1 s (160 runtime + 36 harness tests). On `development`: 160
+  passed in 7.2 s.
+- (b) As measured, 6 of 40 rows within the larger of the two within-run spreads; normalized by measured task size, 36 of
+  40. The ported script's `serial` rows were +11–12% slower in the sweep, and equal after normalizing (0.0%): the
+  as-measured gap was calibration drift between processes (1.010 vs 1.121 ms measured at "1 ms"), not the port. The
+  order was not alternated, so any drift or heat between the two halves is confounded with the variant.
+- (c) Median-of-rounds, normalized: **39 of 40 rows within the noise floor**; as-measured 3 of 40 beyond. `serial` rows
+  differ by 0.0–0.4%. The one row beyond: Pyron ×4, 0.1 ms, +4.4% against a 4.2% floor (all four rounds slower:
+  +1.7, +4.3, +5.6, +4.3%). A +2% shift on the 0.1 ms `raw` rows in (c) did not repeat in (d).
+- (d) Pooled paired differences (new vs old in the same round, normalized): `serial` +0.02% (n = 6); `raw` +0.3% mean,
+  +0.2% median (n = 30, stdev 2.5%); **`pyron` +2.2% mean, +3.2% median (n = 30, stdev 3.6%)**. Per Pyron row: +1.3%
+  (T=1), +2.2% (T=2), +4.5% (T=4), +4.1% (T=8, slower in 5 of 6 rounds), +2.0% (T=16). No single row beyond its noise
+  floor (Pyron rows' floors 6.8–10.7%). The rows are not independent (same rounds, same machine state), so the pooled
+  figure has no meaningful p-value.
+- Incidental, from the ported script's one non-alternated sweep in (b) (one run, 3 repetitions, spread 0.7–10.6%):
+  Pyron ÷ raw throughput at ≥ 4 workers was 96–101% at 10 ms, 98–102% at 1 ms and 78–92% at 0.1 ms (falling with
+  worker count: 92% at 4, 83% at 8, 78% at 16 on 4 CPUs); at 0.1 ms, 1 worker, Pyron's kernel-time share was 10.4%
+  vs 0.0% for `raw`. `raw` threads reached 3.8–3.9× speedup on 4 CPUs at 4+ threads (efficiency 94–99%) at every task size.
+
+Conclusion: The port does not change what the `serial` and `raw` paths measure on this machine (differences ≤ ~0.4%
+pooled, inside the noise). On the Pyron path at 0.1 ms the ported script reads ≈ 2–3% slower, in the direction
+of making Pyron look worse; the measured `run_pyron` body is textually identical in both scripts (apart from helper
+names), so this is **unexplained**. Candidates, none isolated: the harness's `faulthandler` watchdog armed around every
+run (`dump_traceback_later`), the different module layout. A 2% bias is small next to the 8–22% Pyron-vs-raw gap at
+0.1 ms but is not nothing for P2.3. Limits: one cloud VM with unknown tenancy, an RC interpreter build, 4–6 rounds,
+a noise floor looser than the plan's, and a procedure that differs from the one the owner specified under Blocked /
+unresolved (option 3: three rounds, a ≤ 31.5 ns calibration gate and idle period before each run, the control and
+`--workers 16 --task-ms 1` commands) — no gate was used because its threshold was set for the M2. This experiment
+therefore **does not by itself discharge the owner decision**, and the plan's literal pass condition (against
+Experiment 1's M2 numbers) was not applied.
+
+Follow-up: (1) owner decision on P2.1 (accept on this evidence; or adopt a cooled / cloud machine as the primary
+environment for P2.2–P2.4, which changes `phase-2/plan.md` §6 decision 3). (2) Optional, ≈ 10 min: A/B of the
+ported script with and without the watchdog at 0.1 ms to test the one named candidate; worth doing if the Phase 3
+decision rules (§7, unsigned) turn out to be tight. (3) If a cloud VM is used for later experiments, pin the
+interpreter to 3.14.7 or record the version difference with every result.
+
 When an experiment is run, record it here using this format, regardless of
 outcome:
 
@@ -419,6 +486,18 @@ Follow-up:
   different amount of work in two processes (2.5% between Experiment 1 and 2 at 1 ms; up to ~30% under heat). Compare
   measured task sizes (printed per table) before comparing walls across processes.
 
+- 2026-10-04 (P2.1) — **On a homogeneous 4-core VM, raw threads reach 3.8–3.9× on 4 CPUs (94–99% efficiency)**
+  (Experiment 4, one run). Experiment 1's 3.4–4.2× ceiling at 8+ threads on the M2 therefore reflects the mixed
+  4P+4E hardware at least in part, rather than only the interpreter; this is Experiment 1's "repeat on a
+  homogeneous-core machine" follow-up, for one VM and an RC build only. The Pyron-vs-raw gap at 0.1 ms (78–92%)
+  remains and grows with worker count, consistent with Experiment 1.
+- 2026-10-04 (P2.1) — **Open: the ported script reads ≈ 2–3% slower on the Pyron path at 0.1 ms** (Experiment 4 (d)),
+  not on `raw` or `serial`. Cause not isolated (watchdog and module layout are candidates). Treat as a known
+  bias against Pyron of that size in P2.3 until tested.
+- 2026-10-04 (P2.1) — Per-process calibration also drifts on the cloud VM (34.5–40.4 ns/iter, ±8%), so the same
+  as-measured vs normalized gap (e.g. +11–12% on the `serial` row) appears there without any throttling signature
+  in the `serial` rows. Always compare normalized walls across processes.
+
 *(further findings — populated as experiments produce results, including negative
 or inconclusive ones)*
 
@@ -428,8 +507,11 @@ Full suite: 196 tests passing — 160 runtime tests (S0–S6) + 36 benchmark-har
 tests — no warnings (2026-10-04, free-threaded CPython 3.14.7, GIL disabled —
 asserted by `tests/conftest.py`).
 Per component (S0–S6): tested as listed under Implementation progress.
+Cloud run (2026-10-04, Linux x86_64, CPython 3.14.0rc2 free-threaded, GIL disabled): the same 196 tests passed
+in 8.1 s at `41af772`, and `development`'s 160 in 7.2 s (Experiment 4 (a)).
 Known-untested: runs longer than seconds (no hours-long soak); other
-platforms and Python versions (only macOS / Darwin, 3.14.7t); resource
+platforms and Python versions (only macOS / Darwin 3.14.7t, plus one Linux
+x86_64 VM on 3.14.0rc2 for a single suite run); resource
 exhaustion beyond the simulated thread-start failure; a second `Scheduler`
 implementation (only the global queue exists).
 Known limitations: concurrent `shutdown()` callers other than the one that
@@ -470,3 +552,4 @@ questions in one place.
 | 2026-10-04 | Wrote the Phase 2 plan (`context/phase-2/`: plan, scope, implementation, verification) from the owner's draft list, restructured as "measure, then decide"; moved current phase to Phase 2 (planned). Recorded sign-off decisions 1–3; decision 4 (Phase 3 decision rules) pending. Updated `AGENTS.md` summary. Documentation only, no code. | Claude Opus 5.5 |
 | 2026-10-04 | **P2.1 started**: added `benchmarks/_harness.py` (moved workload/timing/environment code unchanged; generalized samples and statistics; extended environment; GIL re-check after every run; beyond-spread test; shared flags; JSON default folder; hang watchdog) and ported `benchmarks/cpu_saturation.py` onto it (measured run bodies unchanged; defaults now 5 reps + 1 warm-up). `tests/test_bench_harness.py` (36 tests); 196 passing. `benchmarks/results/` git-ignored. Corrected `phase-2/implementation.md` §3.1: Experiment 1 was two commands (default sweep + separate process control). Updated README, AGENTS.md, phase-2 status headers. No `pyron/` changes. Reproduction run pending. | Claude Opus 5.5 |
 | 2026-10-04 | **P2.1 reproduction run** (Experiment 2): 37/40 rows within spread; failing rows all in unchanged code. Two old/new A/B attempts spoiled by thermal throttling; probe recorded as Experiment 3. Added two findings and a blocking owner decision (accept P2.1 + add thermal guards / cooled primary machine / re-run after long idle). P2.1 not marked complete. No `pyron/` changes. | Claude Opus 5.5 |
+| 2026-10-04 | Recorded **Experiment 4** (P2.1 old/new A/B on a 4-vCPU Linux cloud VM, CPython 3.14.0rc2): 39/40 rows within the noise floor normalized; `serial`/`raw` paths unchanged; unexplained ≈ +2–3% on the Pyron path at 0.1 ms. Added three findings, a status note under Blocked / unresolved and the cloud suite run under Validation status. Dates normalized to local (IST) from the session's UTC container clock. P2.1 not marked complete; owner decision still pending. Documentation only. | Claude Sonnet 5.5 (cloud session); applied by Claude Opus 5.5 |
