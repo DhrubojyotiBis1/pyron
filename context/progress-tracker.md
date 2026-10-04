@@ -3,11 +3,11 @@
 > This file represents the **actual, current state** of the project. If
 > something is not listed under "Completed" with evidence (code + tests),
 > it is not done — regardless of what `architecture-context.md` describes.
-> Last updated: 2026-10-04 (Phase 2 in progress: P2.1 harness built; reproduction 37/40; cloud old/new A/B recorded as Experiment 4; owner decision on P2.1 still pending)
+> Last updated: 2026-10-04 (Phase 2 in progress: P2.1 COMPLETE, accepted by the owner on the evidence of Experiments 2 and 4; primary benchmark environment for P2.2–P2.4 is the Claude Code cloud container; P2.2 next, after sign-off decision 4)
 
 ## Current phase
 
-**Phase 2 — Measure, then decide. Status: IN PROGRESS — P2.1 (harness built and tested; reproduction run 37/40 within spread; blocked on an owner decision about thermal throttling; a cloud old/new A/B is recorded in Experiment 4). Sign-off decision 4 pending.**
+**Phase 2 — Measure, then decide. Status: IN PROGRESS — P2.1 COMPLETE (accepted by the owner on 2026-10-04: reproduction 37/40 within spread, Experiment 2; old/new A/B 39/40 within the noise floor, Experiment 4). Primary benchmark environment for P2.2–P2.4: the Claude Code cloud container (owner decision 2026-10-04; the M2 is secondary). Next: P2.2, after sign-off decision 4.**
 
 Phase 1 (minimal M:N scheduler: 1 global queue, N workers) is COMPLETE
 (S0–S6 done; exit criteria met — see Validation status). Phase 0
@@ -31,7 +31,9 @@ breakdown, writes ADR-004 on handling blocking tasks, and then chooses the
 Phase 3 track by decision rules fixed in advance. Sign-off decisions
 answered on 2026-10-04 (`phase-2/plan.md` §6): a phase with no runtime
 features is acceptable; raw benchmark JSON is not committed; the owner will
-run homogeneous-core / other-OS repeats separately. Pending: decision 4,
+run homogeneous-core / other-OS repeats separately — amended the same day:
+the Claude Code cloud container is the primary environment for P2.2–P2.4
+and the M2 is secondary (`phase-2/plan.md` §6 decision 3). Pending: decision 4,
 the Phase 3 decision rules (`phase-2/plan.md` §7), which must be signed off
 before any P2.2–P2.4 result is looked at.
 
@@ -98,9 +100,9 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
   - All 160 tests (S0–S6) passing ✓
 - No work-stealing implementation exists.
 
-## Implementation progress: Phase 2 (P2.1 in progress)
+## Implementation progress: Phase 2 (P2.1 complete)
 
-- **P2.1 IN PROGRESS (blocked on owner decision)**: shared benchmark harness; `cpu_saturation.py` ported
+- **P2.1 COMPLETE (accepted by the owner, 2026-10-04)**: shared benchmark harness; `cpu_saturation.py` ported
   - `benchmarks/_harness.py`: `burn`, `calibrate_ns_per_iter`, `cpu_times`, `Window`, `gil_enabled`, `_cmd`
     moved unchanged from `cpu_saturation.py` (AST-identical); `Sample` / `Stats` / `summarize` generalized
     (configuration as a mapping; median, spread, min, max, cores, sys share — same arithmetic) ✓
@@ -126,8 +128,12 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
   - Reproduction run of Experiment 1 done (Experiment 2): **37 of 40 rows within spread; pass condition not fully met.**
     The three rows outside run code the port did not change (two `raw`, one `serial`); two attempts to isolate port
     vs environment by an old/new A/B were spoiled by thermal throttling (Experiment 3)
-  - **Blocked on an owner decision** (see Blocked / unresolved): whether to accept the reproduction, and how Phase 2
-    handles thermal throttling on this machine, before P2.2 starts
+  - Old/new A/B on a cloud VM (Experiment 4): 39 of 40 rows within the noise floor normalized; `serial` and `raw`
+    paths unchanged (≤ ~0.4% pooled); an unexplained ≈ +2–3% on the Pyron path at 0.1 ms (open finding) ✓
+  - **Owner decision 2026-10-04: P2.1 accepted on this evidence** — the pass condition in `phase-2/implementation.md`
+    §3.1 was not literally met (37/40), the misses are in unchanged code, and Experiment 4 shows the port does not
+    change the `serial`/`raw` paths. The ≈ 2–3% Pyron-path bias at 0.1 ms is carried forward as a known bias against
+    Pyron (Findings), not resolved. No harness change was made as part of the acceptance ✓
 - No `pyron/` code changed in Phase 2.
 
 ## Completed
@@ -142,17 +148,19 @@ evidence recorded in each ADR entry (`architecture-context.md` §8).
 | **S3 — Scheduler protocol + GlobalQueueScheduler** | `pyron/scheduler.py`, `tests/test_s3_scheduler.py` with 21 passing tests; FIFO ordering verified, close/submit atomicity, drain atomicity, multi-worker access tested |
 | **S4 — Worker** | `pyron/worker.py`, `tests/test_s4_worker.py` with 20 passing tests; clean exit on close, crash recording, exception vs BaseException handling, multi-worker on one scheduler |
 | **S5 — Runtime** | `pyron/runtime.py`, `tests/test_s5_runtime.py` with 32 passing tests; lifecycle, both shutdown modes, crash surfacing, final sweep, spawn-vs-shutdown stress |
+| **S6 — Stress and race hardening** | `tests/test_s6_stress.py` with 9 passing stress tests; ADR-001..003 `CONFIRMED`; `phase-1/verification.md` §6 complete |
+| **P2.1 — Shared benchmark harness; `cpu_saturation.py` ported** | `benchmarks/_harness.py`, `benchmarks/cpu_saturation.py`, `tests/test_bench_harness.py` with 36 passing tests (196 in the full suite); Experiments 2 and 4; accepted by the owner on 2026-10-04 with the reproduction at 37/40 rows (see the P2.1 entry above) |
 
 ## In progress
 
-- P2.1 — harness and port done and tested; reproduction run done (Experiment 2, 37/40 rows within spread); old/new A/B run on a cloud VM (Experiment 4: no change to the `raw`/`serial` paths, an unexplained ≈ +2% on the Pyron path at 0.1 ms); blocked on the owner decision below.
+- Nothing under way. P2.1 is complete; P2.2 has not started and waits on sign-off decision 4 (Blocked / unresolved).
 
 ## Planned (not started)
 
 Phase 2 increments (details in `phase-2/plan.md` §3). P2.5 may run
 alongside P2.2–P2.4; P2.6 comes last.
 
-1. P2.1 — *in progress* (see above)
+1. ~~P2.1~~ ✓ DONE (accepted 2026-10-04)
 2. P2.2 — Scheduler contention baseline (incl. sharded-queue upper bound, hand-off latency)
 3. P2.3 — End-to-end baseline: `Runtime` vs `ThreadPoolExecutor` vs raw threads across task sizes
 4. P2.4 — Per-task cost breakdown and reconciliation
@@ -181,33 +189,17 @@ should only ever list what's actually queued to start next.
 
 ## Blocked / unresolved
 
-- **P2.1 → P2.2 gate (owner decision needed, raised 2026-10-04).** The reproduction run (Experiment 2) has 3 of 40
-  rows outside the pass condition, all in code the port did not change; the A/B meant to confirm that the port is not
-  the cause was inconclusive because this machine (MacBook Air M2, fanless) throttles within ~30 s of all-core load
-  and stays throttled after it (Experiment 3). Proposed options, not chosen:
-  1. Accept P2.1 on the evidence (unchanged measured code; 37/40 rows), and add thermal guards to the harness before
-     P2.2: record calibration before *and* after each configuration and flag drift; flag a measured task size that
-     differs from the target; a cool-down gate long enough to undo heat soak; interleave variants within a repetition
-     (already the case). A recorded harness change.
-  2. Make a machine with active cooling (the owner's planned homogeneous-core runs) the primary environment for
-     P2.2–P2.4, keeping the M2 runs as secondary evidence. Changes `phase-2/plan.md` §6 decision 3.
-  3. Re-run the reproduction after a long idle period (≥ 30 min), and the old/new A/B with a long cool-down per run,
-     before deciding.
-  This also contradicts `phase-2/scope.md` §3 limitation 8 as written (it assumed throttling needs long runs); the
-  §5 risk table in `phase-2/plan.md` has no thermal row. Both to be amended with the decision.
-  **Next step (owner, 2026-10-04): option 3 first, run in the morning on a cooled machine.** Procedure: original
-  script (`git show eede54b:benchmarks/cpu_saturation.py`) vs the ported script, alternating old/new, new/old,
-  old/new over 3 rounds, on the control command and on `--workers 16 --task-ms 1 --reps 3 --work-seconds 3`
-  (ported script with `--warmup 0`); before every run, ≥ 3 min idle and then a fresh calibration ≤ 31.5 ns/iter;
-  AC power, machine otherwise unused. Compare each row old vs new with `beyond_spread`, both as measured and
-  normalized by each process's measured task size. A first attempt on 2026-10-04 was stopped before any run.
-  **Update 2026-10-04:** a different old/new A/B was run on a cloud VM instead (Experiment 4: 39/40 rows within the
-  noise floor when normalized; an unexplained ≈ +2% on the Pyron path at 0.1 ms). It used a different machine and
-  procedure than the one above, so the decision is still open.
-
 - Phase 2 sign-off decision 4 (Phase 3 decision rules, `phase-2/plan.md`
-  §7) is pending. It does not block P2.1 or P2.5, but must be answered
-  before any P2.2–P2.4 result is looked at.
+  §7) is pending. It does not block P2.5, but must be answered
+  before any P2.2–P2.4 result is looked at. Rule 5 was reworded on
+  2026-10-04 for the new primary environment (cloud container, M2
+  secondary); the reworded text is part of what is to be signed off.
+- Resolved 2026-10-04: how P2.2–P2.4 handle the M2's thermal throttling
+  (Experiment 3). Owner decision: the Claude Code cloud container is the
+  primary environment; M2 results are secondary and labelled as possibly
+  thermally affected; no thermal guards added to the harness. Recorded in
+  `phase-2/plan.md` §5 and §6 decision 3, `phase-2/scope.md` §3 items 1, 2
+  and 8, `phase-2/implementation.md` §2.2.
 - Open architectural questions (queue topology, task granularity,
   backpressure, blocking tasks) remain open in `architecture-context.md` §5.
   Phase 2 targets topology, granularity and blocking tasks.
@@ -354,7 +346,8 @@ port: the failing rows run unchanged code, one is fully explained by task size, 
 load on a fanless machine. That attribution rests on code identity, not on a successful A/B; the A/B could not
 be run cleanly here.
 
-Follow-up: owner decision recorded under Blocked / unresolved.
+Follow-up: the A/B was done on a cloud VM (Experiment 4). **Owner decision 2026-10-04: P2.1 accepted on Experiments 2
+and 4** despite the 37/40 result.
 
 ### Experiment 3 — Thermal throttling of the test machine under sustained load — 2026-10-04
 Question: Why did the old/new A/B for Experiment 2 give 40–100% spreads, and is calibration reliable on this machine?
@@ -386,7 +379,8 @@ efficiency-core placement (it stays slow with the machine idle), but placement w
 Experiment 2 could not be run cleanly. Hypothesis, untested: part of Experiment 1's up-to-19% spread at 8+ threads was
 thermal.
 
-Follow-up: owner decision recorded under Blocked / unresolved.
+Follow-up: resolved 2026-10-04 — P2.2–P2.4 run primarily on the Claude Code cloud container; the M2 is secondary
+(`phase-2/plan.md` §6 decision 3).
 
 ### Experiment 4 — P2.1 old/new A/B and 0.1 ms check on a cloud VM — 2026-10-04
 Question: Does the ported `cpu_saturation.py` measure the same thing as the original (`eede54b`), judged by an
@@ -446,8 +440,8 @@ unresolved (option 3: three rounds, a ≤ 31.5 ns calibration gate and idle peri
 therefore **does not by itself discharge the owner decision**, and the plan's literal pass condition (against
 Experiment 1's M2 numbers) was not applied.
 
-Follow-up: (1) owner decision on P2.1 (accept on this evidence; or adopt a cooled / cloud machine as the primary
-environment for P2.2–P2.4, which changes `phase-2/plan.md` §6 decision 3). (2) Optional, ≈ 10 min: A/B of the
+Follow-up: (1) ~~owner decision on P2.1~~ — **accepted on this evidence, 2026-10-04**; whether a cooled / cloud machine
+becomes the primary environment for P2.2–P2.4 — **yes: the Claude Code cloud container, decided 2026-10-04**. (2) Optional, ≈ 10 min: A/B of the
 ported script with and without the watchdog at 0.1 ms to test the one named candidate; worth doing if the Phase 3
 decision rules (§7, unsigned) turn out to be tight. (3) If a cloud VM is used for later experiments, pin the
 interpreter to 3.14.7 or record the version difference with every result.
@@ -553,3 +547,5 @@ questions in one place.
 | 2026-10-04 | **P2.1 started**: added `benchmarks/_harness.py` (moved workload/timing/environment code unchanged; generalized samples and statistics; extended environment; GIL re-check after every run; beyond-spread test; shared flags; JSON default folder; hang watchdog) and ported `benchmarks/cpu_saturation.py` onto it (measured run bodies unchanged; defaults now 5 reps + 1 warm-up). `tests/test_bench_harness.py` (36 tests); 196 passing. `benchmarks/results/` git-ignored. Corrected `phase-2/implementation.md` §3.1: Experiment 1 was two commands (default sweep + separate process control). Updated README, AGENTS.md, phase-2 status headers. No `pyron/` changes. Reproduction run pending. | Claude Opus 5.5 |
 | 2026-10-04 | **P2.1 reproduction run** (Experiment 2): 37/40 rows within spread; failing rows all in unchanged code. Two old/new A/B attempts spoiled by thermal throttling; probe recorded as Experiment 3. Added two findings and a blocking owner decision (accept P2.1 + add thermal guards / cooled primary machine / re-run after long idle). P2.1 not marked complete. No `pyron/` changes. | Claude Opus 5.5 |
 | 2026-10-04 | Recorded **Experiment 4** (P2.1 old/new A/B on a 4-vCPU Linux cloud VM, CPython 3.14.0rc2): 39/40 rows within the noise floor normalized; `serial`/`raw` paths unchanged; unexplained ≈ +2–3% on the Pyron path at 0.1 ms. Added three findings, a status note under Blocked / unresolved and the cloud suite run under Validation status. Dates normalized to local (IST) from the session's UTC container clock. P2.1 not marked complete; owner decision still pending. Documentation only. | Claude Sonnet 5.5 (cloud session); applied by Claude Opus 5.5 |
+| 2026-10-04 | **P2.1 Complete**: owner accepted P2.1 on the evidence of Experiments 2 (37/40) and 4 (39/40, `serial`/`raw` unchanged); the Pyron-path ≈ 2–3% bias at 0.1 ms stays an open finding. Moved P2.1 to Completed (also added the missing S6 row); narrowed Blocked / unresolved to the thermal-handling decision for P2.2–P2.4 plus decision 4; updated Experiment 2–4 follow-ups. Amended `phase-2/scope.md` §3 limitation 8 and added a thermal row to `phase-2/plan.md` §5; updated status headers in `phase-2/` and `AGENTS.md`. Full suite re-run: 196 passing. Documentation only, no code. | Claude Opus 5.5 |
+| 2026-10-04 | Owner decision: the **Claude Code cloud container is the primary benchmark environment for P2.2–P2.4**; the M2 is secondary (its results labelled as possibly thermally affected); no thermal guards added. Amended `phase-2/plan.md` §5 (noise and thermal rows), §6 decision 3, §7 rule 5 (reworded for the new primary; still pending sign-off with decision 4); `phase-2/scope.md` §1 and §3 items 1, 2, 8; `phase-2/implementation.md` §2.2. Removed the thermal item from Blocked / unresolved; decision 4 is the only gate before P2.2. Documentation only. | Claude Opus 5.5 |

@@ -1,6 +1,6 @@
 # Phase 2 — Plan: Measure, then decide
 
-> **Status: IN PROGRESS — P2.1 underway (harness built; reproduction 37/40 within spread; blocked on an owner decision about thermal throttling). See `../progress-tracker.md` for what exists.**
+> **Status: IN PROGRESS — P2.1 complete (accepted by the owner on 2026-10-04 at 37/40 rows; see Experiments 2 and 4); P2.2 next, pending decision 4. Primary benchmark environment for P2.2–P2.4: the Claude Code cloud container (§6 decision 3, amended 2026-10-04). See `../progress-tracker.md` for what exists.**
 > Last updated: 2026-10-04
 > Sign-off decisions 1–3 in §6 were answered on 2026-10-04; decision 4 (the
 > Phase 3 decision rules) is pending and must be answered before any P2.2–P2.4
@@ -88,7 +88,7 @@ welcome evidence but are **not** an exit criterion.
 
 | Risk | Mitigation |
 |---|---|
-| Run-to-run noise hides real differences (Experiment 1 saw up to 19% spread at 8+ threads on the M2) | More repetitions; report spread beside every median; treat differences inside the spread as "no difference"; the owner's homogeneous-core runs as a cross-check |
+| Run-to-run noise hides real differences (Experiment 1 saw up to 19% spread at 8+ threads on the M2; the cloud container's tenancy is unknown, so other tenants may add noise) | More repetitions; report spread beside every median; treat differences inside the spread as "no difference"; alternate variants within a session; M2 runs as a secondary cross-check |
 | Heterogeneous cores (4P+4E) distort scaling and load-balance results | Record core types; report the 1–4 thread range separately from 8+; never attribute an effect to Pyron when raw threads show it too |
 | Isolated micro-measurements don't add up to the end-to-end cost | P2.4 reports the reconciliation and the unexplained remainder explicitly instead of forcing a match |
 | Reading the data to fit a preferred Phase 3 | Decision rules fixed and signed off before results are seen (§7, §6 decision 4) |
@@ -96,6 +96,7 @@ welcome evidence but are **not** an exit criterion.
 | Measurement turns into open-ended digging | Each increment ends with a recorded result, inconclusive allowed; follow-ups are written down, not pursued inside the increment |
 | A spike in P2.5 grows into a feature | Spikes live outside `pyron/`, answer one stated question each, and are labelled `EXPERIMENTAL` |
 | A third-party extension silently re-enables the GIL when imported (relevant to the greenlet spike) | Every benchmark and spike asserts the GIL is still disabled after imports, not only at start-up |
+| Thermal throttling on the fanless M2 (added 2026-10-04): it throttles within ~30 s of all-core load and stays throttled after it, and per-process calibration drifts with it, so walls, spreads and task sizes depend on run order and length (`../progress-tracker.md` Experiment 3) | In place: compare walls normalized by each process's measured task size; variants interleaved within a repetition. **Decided 2026-10-04:** P2.2–P2.4 run primarily on the Claude Code cloud container (no throttling seen there, Experiment 4); M2 runs are secondary evidence and are labelled as possibly thermally affected. No thermal guards added to the harness |
 
 ## 6. Sign-off decisions
 
@@ -103,7 +104,7 @@ welcome evidence but are **not** an exit criterion.
 |---|---|---|---|
 | 1 | Is a phase with no runtime features acceptable? | Yes (2026-10-04) | This plan, §1 |
 | 2 | Commit raw benchmark JSON to the repository? | No (2026-10-04). Scripts, exact commands and recorded environments are committed; raw JSON stays local in a git-ignored folder; summaries go in the tracker | `scope.md` §1, `implementation.md` §2.6 |
-| 3 | Runs on a homogeneous-core machine / another OS | The owner will run them separately (2026-10-04). The harness must run unchanged on Linux and macOS; owner-run results are recorded as their own experiments when provided | `scope.md` §1, `implementation.md` §2.2 |
+| 3 | Runs on a homogeneous-core machine / another OS | The owner will run them separately (2026-10-04). The harness must run unchanged on Linux and macOS; owner-run results are recorded as their own experiments when provided. **Amended 2026-10-04:** the primary environment for P2.2–P2.4 is the Claude Code cloud container (Linux x86_64, homogeneous cores), chosen after the M2 was found to throttle (`../progress-tracker.md` Experiment 3); the M2 is secondary. Runs on the cloud container pin CPython 3.14.7 free-threaded where it can be installed, otherwise record the version difference with every result; the environment is recorded per run because the instance is not guaranteed identical between sessions | `scope.md` §1 and §3, `implementation.md` §2.2 |
 | 4 | Decision rules for choosing Phase 3 | **Pending.** Proposed rules in §7; must be accepted or amended before any P2.2–P2.4 result is looked at | §7 |
 
 ## 7. Decision rules for Phase 3 — `PROPOSED` (pending sign-off, §6 decision 4)
@@ -132,9 +133,12 @@ configurations being compared.
    not firing. The topology question then stays open in
    `architecture-context.md` §5 with the negative or inconclusive evidence
    attached.
-5. If the owner's homogeneous-core runs are available by P2.6 and disagree
-   with the M2 runs on rule 1, rule 1 does not fire, and the disagreement is
-   recorded as a finding.
+5. If runs on a second environment (the M2, or the owner's other
+   machines) are available by P2.6 and disagree with the primary cloud
+   runs on rule 1, rule 1 does not fire, and the disagreement is recorded
+   as a finding. *(Reworded 2026-10-04 when the primary environment moved
+   from the M2 to the cloud container, §6 decision 3; intent unchanged.
+   Still part of the pending decision 4.)*
 
 ## 8. What comes after Phase 2 (not committed)
 

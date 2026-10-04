@@ -1,6 +1,6 @@
 # Phase 2 — Scope
 
-> Status: IN PROGRESS (P2.1). Scope unchanged. Last updated: 2026-10-04.
+> Status: IN PROGRESS (P2.1 complete; P2.2 next). Scope unchanged; primary benchmark environment changed to the Claude Code cloud container (`plan.md` §6 decision 3). Last updated: 2026-10-04.
 > Scope changes for this phase must be flagged and recorded here, not
 > absorbed silently (`ai-workflow-rules.md` §2).
 
@@ -11,8 +11,9 @@
   calibrated CPU workload, timing and CPU-time sampling, repetitions with
   median and spread, result verification, JSON output, command-line
   conventions. `cpu_saturation.py` is ported onto it.
-- **Portability of the harness** to Linux and macOS, so the owner can run it
-  unchanged on a homogeneous-core machine (`plan.md` §6 decision 3).
+- **Portability of the harness** to Linux and macOS, so it runs unchanged
+  on the primary environment (the Claude Code cloud container, Linux) and
+  on the M2 and the owner's other machines (`plan.md` §6 decision 3).
 - **Three measurement increments** (P2.2–P2.4), each a committed script and
   a recorded experiment:
   - the scheduler alone under contention, with comparison queues and a
@@ -57,12 +58,17 @@
 These are accepted limits on what Phase 2's evidence can show. Each is to
 be stated in the experiment record it affects.
 
-1. **One machine in this phase's own runs.** The planned runs are on the
-   Apple M2 (4 performance + 4 efficiency cores). Results do not generalize
-   to other hardware, operating systems or Python builds. Homogeneous-core
-   runs depend on the owner and are not guaranteed by the end of the phase.
-2. **Heterogeneous cores blur scaling.** A thread that lands on an
-   efficiency core finishes later regardless of the scheduler. Effects seen
+1. **One primary environment.** *Amended 2026-10-04:* P2.2–P2.4 run
+   primarily on the Claude Code cloud container (Linux x86_64; 4 vCPUs in
+   Experiment 4), with the Apple M2 (4P + 4E) as secondary evidence.
+   Results do not generalize to other hardware, operating systems or Python
+   builds. The container's tenancy is unknown, its hardware is not
+   guaranteed identical between sessions, and with 4 vCPUs worker counts
+   above 4 are oversubscription — so the environment is recorded per run,
+   and comparisons are made between runs in the same session.
+2. **Heterogeneous cores blur scaling** (M2 runs only; the cloud container
+   reported identical cores). A thread that lands on an efficiency core
+   finishes later regardless of the scheduler. Effects seen
    equally with raw threads are not attributed to Pyron.
 3. **Noise.** Experiment 1's spread at 8+ threads (up to 19%) means
    differences of a few percent are not distinguishable. Phase 2 can show
@@ -81,9 +87,16 @@ be stated in the experiment record it affects.
 7. **ADR-004 is paper evidence.** Apart from spikes answering single
    factual questions, no option is implemented, so the ADR's risk
    assessments are reasoned, not measured.
-8. **Short runs only.** Runs last seconds to minutes. Thermal throttling and
-   long-running behaviour are not covered unless a run is explicitly made
-   long and recorded as such.
+8. **Short runs only, and short runs are not free of throttling.** Runs
+   last seconds to minutes; long-running behaviour is not covered unless a
+   run is explicitly made long and recorded as such. *Amended 2026-10-04:*
+   this item originally assumed thermal throttling needs long runs. On the
+   fanless M2 it starts within ~30 s of all-core load and persists after the
+   load ends (`../progress-tracker.md` Experiment 3), so M2 results carry a
+   thermal component that depends on run order and length. Decided
+   2026-10-04: P2.2–P2.4 run primarily on the cloud container, and M2
+   results are secondary and labelled as possibly thermally affected
+   (`plan.md` §5, §6 decision 3).
 9. **Phase 1 limitations still stand.** Nothing in `../phase-1/scope.md` §3
    is fixed by this phase.
 

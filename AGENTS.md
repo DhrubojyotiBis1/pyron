@@ -14,7 +14,7 @@ free-threaded Python — many logical tasks scheduled onto a smaller pool of
 real threads. **Phase 1 (minimal scheduler: one global queue, N workers) is
 implemented and validated**; Phase 2 (measure, then decide: benchmark
 harness, baselines, and an ADR on blocking tasks — no runtime changes) is
-planned in `context/phase-2/` and in progress (P2.1). Exact current
+planned in `context/phase-2/` and in progress (P2.1 harness done; P2.2 next). Exact current
 state: `context/progress-tracker.md`. Full detail:
 `context/project-overview.md`.
 

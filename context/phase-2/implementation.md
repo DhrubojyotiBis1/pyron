@@ -1,8 +1,10 @@
 # Phase 2 — Implementation Design
 
-> Status: IN PROGRESS — P2.1 harness built; reproduction run 37/40 rows within
-> spread, blocked on an owner decision about thermal throttling (see
-> `../progress-tracker.md`, Experiments 2–3). Last updated: 2026-10-04.
+> Status: IN PROGRESS — P2.1 complete: harness built; reproduction run 37/40
+> rows within spread, accepted by the owner with Experiment 4's A/B (see
+> `../progress-tracker.md`, Experiments 2–4). P2.2 not started; it runs
+> primarily on the Claude Code cloud container (§2.2). Last updated:
+> 2026-10-04.
 > This is the design of the measuring tools, the experiments and ADR-004.
 > Evidence of implementation will be in the committed scripts and in
 > `../progress-tracker.md`, not in this document. Nothing here changes
@@ -58,6 +60,10 @@ extracted function is a separate, recorded change.
 - Every lookup is optional: a missing file or command records `None` and
   never fails the run. The harness must run unchanged on Linux and macOS
   (`plan.md` §6 decision 3).
+- Primary environment for P2.2–P2.4 (decided 2026-10-04): the Claude Code
+  cloud container. Every recorded experiment states the interpreter version
+  (3.14.7 free-threaded where installable) and the environment block the
+  harness prints, since the instance may differ between sessions.
 
 ### 2.3 GIL guard
 
